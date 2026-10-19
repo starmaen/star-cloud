@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -161,7 +162,10 @@ fun SettingsScreen(
 
                     OutlinedButton(
                         onClick = {
-                            val driveRoot = Uri.parse("content://com.google.android.apps.docs.storage/root")
+                            val driveRoot = DocumentsContract.buildTreeDocumentUri(
+                                "com.google.android.apps.docs.storage",
+                                "root"
+                            )
                             runCatching { folderPicker.launch(driveRoot) }
                                 .onFailure { folderPicker.launch(null) }
                         },

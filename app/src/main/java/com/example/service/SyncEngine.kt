@@ -417,10 +417,11 @@ class SyncEngine(
 
     private fun formatBytes(bytes: Long): String {
         val mb = bytes / (1024.0 * 1024.0)
-        return if (mb >= 1024) {
-            String.format("%.2f GB", mb / 1024.0)
-        } else {
-            String.format("%.1f MB", mb)
+        val gb = mb / 1024.0
+        return when {
+            gb >= 1024 -> String.format("%.2f TB", gb / 1024.0)
+            mb >= 1024 -> String.format("%.2f GB", gb)
+            else -> String.format("%.1f MB", mb)
         }
     }
 }

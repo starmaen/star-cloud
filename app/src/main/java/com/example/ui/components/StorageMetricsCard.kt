@@ -163,16 +163,24 @@ fun StorageMetricsCard(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            if (isCloudEnabled) {
+            if (isCloudEnabled && !isDestinationReady) {
+                Text(
+                    text = "لم يُمنح إذن الكتابة للوجهة بعد. أعد ربطها لعرض مساحتها الحقيقية.",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            } else if (isCloudEnabled) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = if (cloudQuota.hasAvailableSpace) {
-                            "المساحة المتاحة: ${formatBytes(cloudQuota.availableBytes ?: 0L)}"
-                        } else {
-                            "المساحة المتاحة غير معلنة من هذا المزود"
+                        text = when {
+                            cloudQuota.availableBytes != null && cloudQuota.totalBytes > 0L ->
+                                "المتاح: ${formatBytes(cloudQuota.availableBytes)} من ${formatBytes(cloudQuota.totalBytes)}"
+                            cloudQuota.availableBytes != null ->
+                                "المتاح: ${formatBytes(cloudQuota.availableBytes)}"
+                            else -> "المساحة المتاحة غير معلنة من هذا المزود"
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -272,7 +280,9 @@ private fun formatBytes(bytes: Long): String {
     val kb = bytes / 1024.0
     val mb = kb / 1024.0
     val gb = mb / 1024.0
+    val tb = gb / 1024.0
     return when {
+        tb >= 1.0 -> String.format(Locale.US, "%.2f TB", tb)
         gb >= 1.0 -> String.format(Locale.US, "%.2f GB", gb)
         mb >= 1.0 -> String.format(Locale.US, "%.1f MB", mb)
         else -> String.format(Locale.US, "%.0f KB", kb)

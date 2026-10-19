@@ -156,10 +156,9 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun readDeviceStorage(): DeviceStorageInfo {
         val internal = runCatching {
-            val internalPath = runCatching { Environment.getExternalStorageDirectory().path }
-                .getOrNull()
-                ?.takeIf { it.isNotBlank() }
-                ?: Environment.getDataDirectory().path
+            val internalPath = Environment.getDataDirectory().path.takeIf { it.isNotBlank() }
+                ?: runCatching { Environment.getExternalStorageDirectory().path }.getOrNull()
+                ?: return@runCatching null
             val stat = StatFs(internalPath)
             val total = stat.blockCountLong * stat.blockSizeLong
             val free = stat.availableBlocksLong * stat.blockSizeLong
@@ -285,6 +284,12 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
             if (externalRequested && !cloudRegistry.destinationReady()) {
                 _userMessage.value = "إذن الكتابة على المجلد المختار غير متاح. أعد اختيار وجهة المزامنة من الإعدادات."
                 return@launch
+            }
+            if (preferences.syncContacts.value && _contacts.value.isEmpty()) {
+                runCatching { _contacts.value = app.contactsHelper.getContacts() }
+            }
+            if (preferences.syncWhatsApp.value && _whatsAppCategories.value.isEmpty()) {
+                runCatching { _whatsAppCategories.value = app.waHelper.getWhatsAppMediaCategories() }
             }
             val provider = cloudRegistry.getActiveProvider()
             val success = syncEngine.executeSync(

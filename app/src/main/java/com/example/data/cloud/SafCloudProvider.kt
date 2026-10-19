@@ -49,9 +49,10 @@ class SafCloudProvider(
 
     override suspend fun getQuota(): CloudQuota = withContext(Dispatchers.IO) {
         val used = runCatching { baseDir()?.let { dirSize(it, 0) } ?: 0L }.getOrDefault(0L)
-        val available = runCatching { queryAvailableBytes() }.getOrNull()
+        val available = runCatching { queryQuotaColumn(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES) }.getOrNull()
+        val total = runCatching { queryQuotaColumn(DocumentsContract.Root.COLUMN_CAPACITY_BYTES) }.getOrNull()
         CloudQuota(
-            totalBytes = 0L,
+            totalBytes = total ?: 0L,
             usedBytes = used,
             starCloudUsedBytes = used,
             availableBytes = available
@@ -198,17 +199,17 @@ class SafCloudProvider(
         return current
     }
 
-    private fun queryAvailableBytes(): Long? {
+    private fun queryQuotaColumn(column: String): Long? {
         val authority = treeUri.authority ?: return null
         val treeDocId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
 
-        // Some providers expose available bytes on the selected document.
+        // Some providers expose quota columns on the selected document.
         if (treeDocId != null) {
             val docValue = runCatching {
                 val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
                 context.contentResolver.query(
                     docUri,
-                    arrayOf(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES),
+                    arrayOf(column),
                     null,
                     null,
                     null
@@ -216,7 +217,7 @@ class SafCloudProvider(
                     if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
                 }
             }.getOrNull()
-            if (docValue != null) return docValue
+            if (docValue != null && docValue > 0L) return docValue
         }
 
         val rootIds = linkedSetOf<String>()
@@ -227,7 +228,7 @@ class SafCloudProvider(
                 val rootUri = DocumentsContract.buildRootUri(authority, rootId)
                 context.contentResolver.query(
                     rootUri,
-                    arrayOf(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES),
+                    arrayOf(column),
                     null,
                     null,
                     null
@@ -235,20 +236,23 @@ class SafCloudProvider(
                     if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
                 }
             }.getOrNull()
-            if (value != null) return value
+            if (value != null && value > 0L) return value
         }
 
         return runCatching {
             val rootsUri = DocumentsContract.buildRootsUri(authority)
             context.contentResolver.query(
                 rootsUri,
-                arrayOf(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES),
+                arrayOf(column),
                 null,
                 null,
                 null
             )?.use { cursor ->
                 while (cursor.moveToNext()) {
-                    if (!cursor.isNull(0)) return@use cursor.getLong(0)
+                    if (!cursor.isNull(0)) {
+                        val value = cursor.getLong(0)
+                        if (value > 0L) return@use value
+                    }
                 }
                 null
             }
