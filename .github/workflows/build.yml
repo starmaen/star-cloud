@@ -34,6 +34,10 @@ jobs:
         run: |
           touch .env
 
+      - name: Print signing fingerprints
+        run: |
+          keytool -list -v -keystore keystore.jks -storepass "AlMustasharStore2026" -alias al-mustashar | grep -E "SHA1:|SHA256:" || true
+
       - name: Build debug APK
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
