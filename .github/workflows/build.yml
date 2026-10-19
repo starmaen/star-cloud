@@ -32,7 +32,6 @@ jobs:
 
       - name: Prepare signing key and env
         run: |
-          keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
           touch .env
 
       - name: Build debug APK
@@ -49,5 +48,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view latest >/dev/null 2>&1 || gh release create latest --title "Star Cloud - latest build" --notes "أحدث نسخة من Star Cloud. المزامنة الحقيقية عبر Google Drive أو مجلد SAF أو مساحة التطبيق الداخلية."
-          gh release upload latest app/build/outputs/apk/debug/app-debug.apk#Star_Cloud.apk --clobber
+          gh release view latest >/dev/null 2>&1 || gh release create latest --title "Star Cloud - latest build" --notes "أحدث نسخة من Star Cloud. المزامنة الحقيقية عبر Google Drive أو مجلد SAF أو مساحة التطبيق الداخلية." || true
+          gh release view latest >/dev/null 2>&1 || { echo "Release 'latest' غير متاح"; exit 1; }
+          gh release delete-asset latest Star_Cloud.apk -y >/dev/null 2>&1 || true
+          gh release delete-asset latest app-debug.apk -y >/dev/null 2>&1 || true
+          gh release upload latest app/build/outputs/apk/debug/app-debug.apk
+          ASSET_ID=$(gh release view latest --json assets --jq '.assets[] | select(.name=="app-debug.apk") | .id' | head -n1)
+          if [ -n "$ASSET_ID" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" -f name=Star_Cloud.apk >/dev/null
+          fi
+
+      - name: Sync APK to repository root
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "star-cloud-bot"
+          git config user.email "starcloud-bot@users.noreply.github.com"
+          cp app/build/outputs/apk/debug/app-debug.apk Star_Cloud.apk
+          if ! git diff --quiet -- Star_Cloud.apk; then
+            git add Star_Cloud.apk
+            git commit -m "chore: update Star_Cloud.apk [skip ci]"
+            git push origin HEAD:main
+          fi

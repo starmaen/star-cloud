@@ -30,10 +30,12 @@ android {
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
+      // مفتاح توقيع ثابت مُخزَّن مع المشروع حتى يمكن التحديث فوق النسخة المثبتة
+      // دون الحاجة لإلغاء التثبيت في كل مرة.
+      storeFile = file("${rootDir}/keystore.jks")
+      storePassword = "AlMustasharStore2026"
+      keyAlias = "al-mustashar"
+      keyPassword = "AlMustasharKey2026"
     }
   }
 
