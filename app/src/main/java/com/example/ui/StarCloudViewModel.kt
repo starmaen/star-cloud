@@ -23,6 +23,7 @@ import com.example.data.model.WhatsAppMediaCategory
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -305,10 +306,14 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
                 _userMessage.value = "تم تسجيل الدخول: $email. ستُرفع الملفات إلى مجلد Star Cloud في Google Drive."
                 refreshStorageInfo()
             }.onFailure { error ->
-                val message = if ((error as? ApiException)?.statusCode == GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
-                    "تم إلغاء تسجيل الدخول إلى Google"
-                } else {
-                    "فشل تسجيل الدخول إلى Google (${error.message}). تأكد من تفعيل Google Drive API وإضافة بصمة التطبيق SHA-1 في مشروع Google Cloud."
+                val status = (error as? ApiException)?.statusCode
+                val message = when (status) {
+                    GoogleSignInStatusCodes.SIGN_IN_CANCELLED ->
+                        "تم إلغاء تسجيل الدخول إلى Google"
+                    CommonStatusCodes.DEVELOPER_ERROR ->
+                        "خطأ إعداد Google (10): التطبيق غير مسجَّل في Google Cloud. إن لم تُعدّه، استخدم «اختيار مجلد» واختر Google Drive."
+                    else ->
+                        "فشل تسجيل الدخول إلى Google (${error.message}). تأكد من تسجيل OAuth client في Google Cloud."
                 }
                 _userMessage.value = message
             }

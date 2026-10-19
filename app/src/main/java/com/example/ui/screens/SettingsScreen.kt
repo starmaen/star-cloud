@@ -131,6 +131,12 @@ fun SettingsScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("تسجيل الدخول بحساب Google")
                         }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "يتطلب هذا الدخول تسجيل التطبيق في Google Cloud بـ OAuth client نوع Android. Package: com.aistudio.starcloud.kxpqr — SHA-1: 3D:0D:5A:FD:41:96:69:1F:C2:2E:89:AE:D2:5E:8E:70:F5:74:C5:9F. وبدون ذلك استخدم «اختيار مجلد» واختر Google Drive.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     } else {
                         OutlinedButton(
                             onClick = { viewModel.signOutGoogle() },
@@ -236,12 +242,12 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("اختيار مجلد على الهاتف أو بطاقة SD")
+                        Text("اختيار مجلد (الهاتف / SD / Google Drive)")
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "هذا الخيار لمجلدات الهاتف أو بطاقة SD. لمزامنة Google Drive استخدم تسجيل الدخول أعلاه.",
+                        text = "افتح المنتقي واختر Google Drive ← مجلد Star Cloud لرفع الملفات فعلياً إلى حسابك. هذا الخيار لا يحتاج أي إعداد إضافي.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
