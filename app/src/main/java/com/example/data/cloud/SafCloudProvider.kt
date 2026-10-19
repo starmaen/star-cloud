@@ -199,22 +199,60 @@ class SafCloudProvider(
     }
 
     private fun queryAvailableBytes(): Long? {
-        val docUri = DocumentsContract.buildDocumentUriUsingTree(
-            treeUri,
-            DocumentsContract.getTreeDocumentId(treeUri)
-        )
-        context.contentResolver.query(
-            docUri,
-            arrayOf(DocumentsContract.Document.COLUMN_AVAILABLE_BYTES),
-            null,
-            null,
-            null
-        )?.use { cursor ->
-            if (cursor.moveToFirst() && !cursor.isNull(0)) {
-                return cursor.getLong(0)
-            }
+        val authority = treeUri.authority ?: return null
+        val treeDocId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+
+        // Some providers expose available bytes on the selected document.
+        if (treeDocId != null) {
+            val docValue = runCatching {
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, treeDocId)
+                context.contentResolver.query(
+                    docUri,
+                    arrayOf(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                }
+            }.getOrNull()
+            if (docValue != null) return docValue
         }
-        return null
+
+        val rootIds = linkedSetOf<String>()
+        treeDocId?.substringBefore(':')?.takeIf { it.isNotBlank() }?.let { rootIds += it }
+        rootIds += "root"
+        for (rootId in rootIds) {
+            val value = runCatching {
+                val rootUri = DocumentsContract.buildRootUri(authority, rootId)
+                context.contentResolver.query(
+                    rootUri,
+                    arrayOf(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES),
+                    null,
+                    null,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getLong(0) else null
+                }
+            }.getOrNull()
+            if (value != null) return value
+        }
+
+        return runCatching {
+            val rootsUri = DocumentsContract.buildRootsUri(authority)
+            context.contentResolver.query(
+                rootsUri,
+                arrayOf(DocumentsContract.Root.COLUMN_AVAILABLE_BYTES),
+                null,
+                null,
+                null
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    if (!cursor.isNull(0)) return@use cursor.getLong(0)
+                }
+                null
+            }
+        }.getOrNull()
     }
 
     private fun dirSize(dir: DocumentFile, depth: Int): Long {

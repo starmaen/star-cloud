@@ -181,7 +181,7 @@ class SyncEngine(
                 )
                 if (res.isSuccess) {
                     totalProcessed += selectedContacts.size
-                    totalBytesTransferred += res.getOrNull()?.sizeBytes ?: bytes.size
+                    totalBytesTransferred += res.getOrNull()?.sizeBytes ?: bytes.size.toLong()
                 } else {
                     hasError = true
                     errorReason = res.exceptionOrNull()?.message ?: "فشل رفع جهات الاتصال"
@@ -210,7 +210,7 @@ class SyncEngine(
                 )
                 if (smsRes.isSuccess) {
                     totalProcessed += smsList.size
-                    totalBytesTransferred += smsRes.getOrNull()?.sizeBytes ?: smsBytes.size
+                    totalBytesTransferred += smsRes.getOrNull()?.sizeBytes ?: smsBytes.size.toLong()
                 } else {
                     hasError = true
                     errorReason = smsRes.exceptionOrNull()?.message ?: "فشل رفع الرسائل"
@@ -229,7 +229,7 @@ class SyncEngine(
                 )
                 if (callRes.isSuccess) {
                     totalProcessed += callList.size
-                    totalBytesTransferred += callRes.getOrNull()?.sizeBytes ?: callBytes.size
+                    totalBytesTransferred += callRes.getOrNull()?.sizeBytes ?: callBytes.size.toLong()
                 } else {
                     hasError = true
                     errorReason = callRes.exceptionOrNull()?.message ?: "فشل رفع سجل المكالمات"
