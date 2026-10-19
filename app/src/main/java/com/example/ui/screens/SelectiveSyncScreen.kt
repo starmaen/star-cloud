@@ -580,7 +580,7 @@ private fun WhatsAppSubTab(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "اختر بدقة أنواع الوسائط المراد نسخها احتياطيًا لتوفير سعة التخزين والبيانات.",
+                            text = "اختر أنواع الوسائط المراد نسخها احتياطيًا. قد يمنع Android الحديث قراءة مجلد واتساب مباشرة؛ أضف المجلد من تبويب (المجلدات) لرفع الوسائط الفعلية.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -617,7 +617,7 @@ private fun WhatsAppSubTab(
                             fontWeight = FontWeight.Bold
                         )
                         Text(
-                            text = "العدد التقديري: ${cat.estimatedCount} ملف • الحجم: ${formatMb(cat.estimatedSizeBytes)}",
+                            text = "المتاح: ${cat.estimatedCount} ملف • الحجم: ${formatMb(cat.estimatedSizeBytes)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

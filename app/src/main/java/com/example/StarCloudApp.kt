@@ -52,7 +52,7 @@ class StarCloudApp : Application() {
 
         database = StarCloudDatabase.getDatabase(this)
         preferences = SyncPreferences(this)
-        cloudRegistry = CloudProviderRegistry(this)
+        cloudRegistry = CloudProviderRegistry(this, preferences)
         contactsHelper = ContactsBackupHelper(this)
         smsHelper = SmsCallLogBackupHelper(this)
         waHelper = WhatsAppBackupHelper(this)

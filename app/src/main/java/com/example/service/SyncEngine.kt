@@ -17,7 +17,6 @@ import com.example.data.model.SyncProgressState
 import com.example.data.model.WhatsAppMediaCategory
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,6 +24,8 @@ import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileInputStream
+import org.json.JSONArray
+import org.json.JSONObject
 
 class SyncEngine(
     private val context: Context,
@@ -89,7 +90,7 @@ class SyncEngine(
                     stage = "مزامنة المجلد: ${folder.name} (${idx + 1}/${activeFolders.size})"
                 )
 
-                runCatching {
+                val folderOutcome = runCatching {
                     val treeUri = Uri.parse(folder.treeUriString)
                     val treeDocId = DocumentsContract.getTreeDocumentId(treeUri)
                     val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, treeDocId)
@@ -141,11 +142,21 @@ class SyncEngine(
                                 )
                                 if (res.isSuccess) {
                                     totalProcessed++
-                                    totalBytesTransferred += size
+                                    totalBytesTransferred += res.getOrNull()?.sizeBytes ?: size
+                                } else {
+                                    hasError = true
+                                    errorReason = res.exceptionOrNull()?.message ?: "فشل رفع الملف $name"
                                 }
+                            } ?: run {
+                                hasError = true
+                                errorReason = "تعذر قراءة الملف: $name"
                             }
                         }
                     }
+                }
+                folderOutcome.exceptionOrNull()?.let {
+                    hasError = true
+                    errorReason = it.message ?: "تعذر مزامنة المجلد ${folder.name}"
                 }
             }
 
@@ -170,7 +181,10 @@ class SyncEngine(
                 )
                 if (res.isSuccess) {
                     totalProcessed += selectedContacts.size
-                    totalBytesTransferred += bytes.size
+                    totalBytesTransferred += res.getOrNull()?.sizeBytes ?: bytes.size
+                } else {
+                    hasError = true
+                    errorReason = res.exceptionOrNull()?.message ?: "فشل رفع جهات الاتصال"
                 }
             }
 
@@ -186,7 +200,7 @@ class SyncEngine(
                 val smsList = smsHelper.getSmsMessages()
                 val smsJson = smsHelper.exportSmsToJson(smsList)
                 val smsBytes = smsJson.toByteArray(Charsets.UTF_8)
-                provider.uploadFile(
+                val smsRes = provider.uploadFile(
                     remotePath = "Messages",
                     fileName = "sms_backup.json",
                     fileSize = smsBytes.size.toLong(),
@@ -194,13 +208,18 @@ class SyncEngine(
                     mimeType = "application/json",
                     onProgress = { _, _ -> }
                 )
-                totalProcessed += smsList.size
-                totalBytesTransferred += smsBytes.size
+                if (smsRes.isSuccess) {
+                    totalProcessed += smsList.size
+                    totalBytesTransferred += smsRes.getOrNull()?.sizeBytes ?: smsBytes.size
+                } else {
+                    hasError = true
+                    errorReason = smsRes.exceptionOrNull()?.message ?: "فشل رفع الرسائل"
+                }
 
                 val callList = smsHelper.getCallLogs()
                 val callJson = smsHelper.exportCallLogsToJson(callList)
                 val callBytes = callJson.toByteArray(Charsets.UTF_8)
-                provider.uploadFile(
+                val callRes = provider.uploadFile(
                     remotePath = "Messages",
                     fileName = "call_logs.json",
                     fileSize = callBytes.size.toLong(),
@@ -208,34 +227,106 @@ class SyncEngine(
                     mimeType = "application/json",
                     onProgress = { _, _ -> }
                 )
-                totalProcessed += callList.size
-                totalBytesTransferred += callBytes.size
+                if (callRes.isSuccess) {
+                    totalProcessed += callList.size
+                    totalBytesTransferred += callRes.getOrNull()?.sizeBytes ?: callBytes.size
+                } else {
+                    hasError = true
+                    errorReason = callRes.exceptionOrNull()?.message ?: "فشل رفع سجل المكالمات"
+                }
             }
 
             // 4. WhatsApp Media
             if (preferences.syncWhatsApp.value && !isCancelled) {
                 val selectedWa = selectedWhatsAppCategories.filter { it.isSelected }
-                for (cat in selectedWa) {
-                    if (isCancelled) break
-                    _progressState.value = _progressState.value.copy(
-                        currentCategory = SyncCategory.WHATSAPP,
-                        currentItemName = cat.nameAr,
-                        stage = "مزامنة وسائط واتساب: ${cat.nameAr}...",
-                        currentProgress = 0.70f
-                    )
+                if (selectedWa.isNotEmpty()) {
+                    val manifest = JSONObject().apply {
+                        put("generatedAt", System.currentTimeMillis())
+                        put("note", "ملف تعريف بالوسائط. يتم رفع الملفات الفعلية عندما يسمح النظام بقراءة مجلد واتساب؛ وإلا أضف مجلد WhatsApp من قسم المزامنة الانتقائية.")
+                        put("categories", JSONArray().apply {
+                            selectedWa.forEach { cat ->
+                                put(JSONObject().apply {
+                                    put("id", cat.id)
+                                    put("name", cat.nameAr)
+                                    put("path", cat.folderPath)
+                                    put("estimatedCount", cat.estimatedCount)
+                                })
+                            }
+                        })
+                    }.toString().toByteArray(Charsets.UTF_8)
 
-                    val dummyPayload = "WhatsApp ${cat.nameEn} Archive Metadata".toByteArray()
-                    provider.uploadFile(
-                        remotePath = "WhatsApp/${cat.nameEn}",
-                        fileName = "${cat.id}_archive.dat",
-                        fileSize = dummyPayload.size.toLong(),
-                        inputStream = ByteArrayInputStream(dummyPayload),
-                        mimeType = "application/octet-stream",
+                    val manifestRes = provider.uploadFile(
+                        remotePath = "WhatsApp",
+                        fileName = "whatsapp_manifest.json",
+                        fileSize = manifest.size.toLong(),
+                        inputStream = ByteArrayInputStream(manifest),
+                        mimeType = "application/json",
                         onProgress = { _, _ -> }
                     )
-                    totalProcessed += cat.estimatedCount
-                    totalBytesTransferred += cat.estimatedSizeBytes
-                    delay(50)
+                    if (manifestRes.isFailure) {
+                        hasError = true
+                        errorReason = manifestRes.exceptionOrNull()?.message ?: "فشل رفع تعريف وسائط واتساب"
+                    }
+
+                    for (cat in selectedWa) {
+                        if (isCancelled) break
+                        _progressState.value = _progressState.value.copy(
+                            currentCategory = SyncCategory.WHATSAPP,
+                            currentItemName = cat.nameAr,
+                            stage = "مزامنة وسائط واتساب: ${cat.nameAr}...",
+                            currentProgress = 0.70f
+                        )
+                        val dir = File(cat.folderPath)
+                        val files = runCatching {
+                            if (dir.isDirectory && dir.canRead()) {
+                                dir.listFiles()?.filter { it.isFile }.orEmpty()
+                            } else {
+                                emptyList()
+                            }
+                        }.getOrDefault(emptyList())
+
+                        for (file in files) {
+                            if (isCancelled) break
+                            if (file.length() > maxSizeBytes) continue
+                            val ext = file.extension.lowercase()
+                            val mime = when (ext) {
+                                "jpg", "jpeg", "png", "webp" -> "image/*"
+                                "mp4", "3gp", "mkv" -> "video/*"
+                                "mp3", "opus", "m4a", "aac", "ogg" -> "audio/*"
+                                "pdf" -> "application/pdf"
+                                else -> "application/octet-stream"
+                            }
+                            runCatching {
+                                file.inputStream().use { stream ->
+                                    provider.uploadFile(
+                                        remotePath = "WhatsApp/${cat.nameEn}",
+                                        fileName = file.name,
+                                        fileSize = file.length(),
+                                        inputStream = stream,
+                                        mimeType = mime,
+                                        onProgress = { uploaded, total ->
+                                            _progressState.value = _progressState.value.copy(
+                                                currentItemName = file.name,
+                                                currentProgress = if (total > 0) uploaded.toFloat() / total else 0.5f,
+                                                bytesTransferred = totalBytesTransferred + uploaded
+                                            )
+                                        }
+                                    )
+                                }
+                            }.onSuccess { res ->
+                                if (res.isSuccess) {
+                                    totalProcessed++
+                                    totalBytesTransferred += res.getOrNull()?.sizeBytes ?: file.length()
+                                } else {
+                                    hasError = true
+                                    errorReason = res.exceptionOrNull()?.message ?: "فشل رفع ${file.name}"
+                                }
+                            }.onFailure {
+                                hasError = true
+                                errorReason = it.message ?: "تعذر قراءة ${file.name}"
+                            }
+                        }
+                    }
                 }
             }
 
@@ -253,7 +344,7 @@ class SyncEngine(
 
                     val apkFile = appHelper.extractApk(app)
                     if (apkFile != null && apkFile.exists()) {
-                        FileInputStream(apkFile).use { inStream ->
+                        val apkRes = FileInputStream(apkFile).use { inStream ->
                             provider.uploadFile(
                                 remotePath = "Applications",
                                 fileName = apkFile.name,
@@ -267,8 +358,13 @@ class SyncEngine(
                                 }
                             )
                         }
-                        totalProcessed++
-                        totalBytesTransferred += apkFile.length()
+                        if (apkRes.isSuccess) {
+                            totalProcessed++
+                            totalBytesTransferred += apkRes.getOrNull()?.sizeBytes ?: apkFile.length()
+                        } else {
+                            hasError = true
+                            errorReason = apkRes.exceptionOrNull()?.message ?: "فشل رفع ${app.appName}"
+                        }
                     }
                 }
             }
@@ -290,7 +386,7 @@ class SyncEngine(
             val status = if (hasError) "FAILED" else if (isCancelled) "CANCELLED" else "SUCCESS"
 
             val summary = if (status == "SUCCESS") {
-                "تمت المزامنة بنجاح: تم رفع $totalProcessed عنصر بحجم ${formatBytes(totalBytesTransferred)}"
+                "تمت المزامنة بنجاح إلى ${provider.providerType.displayName}: $totalProcessed عنصر بحجم ${formatBytes(totalBytesTransferred)}"
             } else {
                 "فشلت المزامنة: ${errorReason ?: "خطأ غير معروف"}"
             }

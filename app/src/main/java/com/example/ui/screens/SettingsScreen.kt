@@ -2,6 +2,8 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -15,15 +17,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.data.model.CloudProviderType
+import androidx.documentfile.provider.DocumentFile
 import com.example.data.model.ScheduleInterval
 import com.example.ui.StarCloudViewModel
-import com.example.ui.theme.CosmicCyan
 import com.example.ui.theme.StarBluePrimary
 import com.example.ui.theme.StarlightGold
 
@@ -33,15 +33,33 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val connectedAccount by viewModel.connectedAccount.collectAsState()
     val scheduleInterval by viewModel.scheduleInterval.collectAsState()
     val wifiOnly by viewModel.wifiOnly.collectAsState()
     val requireCharging by viewModel.requireCharging.collectAsState()
-    val clientEncryption by viewModel.clientEncryption.collectAsState()
-    val selectedProvider by viewModel.selectedProvider.collectAsState()
+    val cloudEnabled by viewModel.cloudEnabled.collectAsState()
+    val destinationLabel by viewModel.destinationLabel.collectAsState()
+    val destinationReady by viewModel.destinationReady.collectAsState()
 
-    var showAccountDialog by remember { mutableStateOf(false) }
-    var accountInput by remember { mutableStateOf(connectedAccount) }
+    val folderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(uri, flags)
+            }
+            val authority = uri.authority.orEmpty()
+            val folderName = runCatching { DocumentFile.fromTreeUri(context, uri)?.name }.getOrNull()
+            val label = when {
+                authority.contains("google.android.apps.docs", ignoreCase = true) ->
+                    "Google Drive" + if (!folderName.isNullOrBlank()) " — $folderName" else ""
+                authority.contains("externalstorage", ignoreCase = true) ->
+                    folderName?.takeIf { it.isNotBlank() } ?: "ذاكرة الجهاز"
+                else -> folderName?.takeIf { it.isNotBlank() } ?: "المجلد المختار"
+            }
+            viewModel.setDestination(uri, label)
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -62,7 +80,7 @@ fun SettingsScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
                             Box(
                                 modifier = Modifier
                                     .size(42.dp)
@@ -70,17 +88,17 @@ fun SettingsScreen(
                                     .background(StarBluePrimary.copy(alpha = 0.15f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Cloud, contentDescription = null, tint = StarBluePrimary)
+                                Icon(Icons.Default.Folder, contentDescription = null, tint = StarBluePrimary)
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
                                 Text(
-                                    text = "حساب Google Drive",
+                                    text = "وجهة المزامنة",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = connectedAccount,
+                                    text = if (cloudEnabled) destinationLabel else "مساحة التطبيق الداخلية",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.SemiBold
@@ -88,25 +106,76 @@ fun SettingsScreen(
                             }
                         }
 
-                        OutlinedButton(
-                            onClick = {
-                                accountInput = connectedAccount
-                                showAccountDialog = true
-                            },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("تغيير")
-                        }
+                        Switch(
+                            checked = cloudEnabled,
+                            onCheckedChange = { viewModel.setCloudEnabled(it) }
+                        )
                     }
 
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text(
+                        text = if (cloudEnabled) {
+                            if (destinationReady) "الوجهة جاهزة ويمكن الكتابة فيها."
+                            else "الوجهة تحتاج إلى إذن كتابة. أعد اختيار المجلد."
+                        } else {
+                            "المزامنة المحلية فقط. فعّل المفتاح لاختيار مجلد على الهاتف أو بطاقة SD أو Google Drive."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(14.dp))
+                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
                     Text(
-                        text = "نطاقات الصلاحيات النشطة: drive.file و drive.appdata لضمان خصوصية تامة.",
+                        text = "اختر الوجهة",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = { viewModel.useInternalStorage() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.PhoneAndroid, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("مساحة التطبيق الداخلية (محلي فقط)")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Button(
+                        onClick = { folderPicker.launch(null) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.FolderOpen, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("اختيار مجلد على الهاتف أو بطاقة SD")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedButton(
+                        onClick = {
+                            val driveRoot = Uri.parse("content://com.google.android.apps.docs.storage/root")
+                            runCatching { folderPicker.launch(driveRoot) }
+                                .onFailure { folderPicker.launch(null) }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Default.Cloud, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("ربط Google Drive")
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "عند اختيار Google Drive ستفتح نافذة Google لتسجيل الدخول واختيار المجلد. لا نطلب كلمة المرور، والوصول محصور بالمجلد الذي تختاره. تُحفظ الملفات داخل مجلد Star Cloud.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -233,54 +302,16 @@ fun SettingsScreen(
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "تشفير النسخ قبل رفعها إلى Google Drive بمفتاح سري خاص بك",
+                                text = "قيد التطوير — لن يتم تفعيله قبل اكتمال التشفير والتحقق منه.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                         Switch(
-                            checked = clientEncryption,
-                            onCheckedChange = { viewModel.setClientEncryption(it) }
+                            checked = false,
+                            onCheckedChange = null,
+                            enabled = false
                         )
-                    }
-                }
-            }
-        }
-
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Column(modifier = Modifier.padding(18.dp)) {
-                    Text(
-                        text = "مزود التخزين السحابي (بنية معمارية قابلة للتوسع)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-
-                    CloudProviderType.values().forEach { provider ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { viewModel.setCloudProvider(provider) }
-                                .padding(vertical = 4.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(
-                                selected = provider == selectedProvider,
-                                onClick = { viewModel.setCloudProvider(provider) }
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = provider.displayName,
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = if (provider == selectedProvider) FontWeight.Bold else FontWeight.Normal
-                            )
-                        }
                     }
                 }
             }
@@ -306,7 +337,7 @@ fun SettingsScreen(
                     Spacer(modifier = Modifier.height(8.dp))
 
                     Text(
-                        text = "Star Cloud هو تطبيق أصلي مبني بلغة Kotlin وJetpack Compose وفق أعلى معايير الجودة والأمان (Clean Architecture + MVVM + WorkManager + SAF).",
+                        text = "Star Cloud تطبيق أصلي بلغة Kotlin وJetpack Compose، يعتمد على SAF للوصول الآمن إلى مساحة التطبيق وذاكرة الهاتف وبطاقة SD وGoogle Drive.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -345,41 +376,5 @@ fun SettingsScreen(
                 }
             }
         }
-    }
-
-    if (showAccountDialog) {
-        AlertDialog(
-            onDismissRequest = { showAccountDialog = false },
-            title = { Text("تحديث حساب Google Drive") },
-            text = {
-                Column {
-                    Text("أدخل البريد الإلكتروني المعتمد لمزامنة Google Drive:")
-                    Spacer(modifier = Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = accountInput,
-                        onValueChange = { accountInput = it },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (accountInput.isNotBlank()) {
-                            viewModel.setConnectedAccount(accountInput.trim())
-                        }
-                        showAccountDialog = false
-                    }
-                ) {
-                    Text("حفظ")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAccountDialog = false }) {
-                    Text("إلغاء")
-                }
-            }
-        )
     }
 }

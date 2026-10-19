@@ -18,7 +18,7 @@ class SyncWorker(
         val preferences = app.preferences
         val database = app.database
 
-        val provider = registry.getProvider(com.example.data.model.CloudProviderType.GOOGLE_DRIVE)
+        val provider = registry.getActiveProvider()
         val folders = database.syncDao().getAllFolderConfigs().first()
 
         val contacts = app.contactsHelper.getContacts().filter { it.isSelected }

@@ -32,6 +32,15 @@ class SyncPreferences(context: Context) {
     private val _connectedAccount = MutableStateFlow(getConnectedAccount())
     val connectedAccount: StateFlow<String> = _connectedAccount
 
+    private val _cloudEnabled = MutableStateFlow(isCloudEnabled())
+    val cloudEnabled: StateFlow<Boolean> = _cloudEnabled
+
+    private val _destinationLabel = MutableStateFlow(getDestinationLabel())
+    val destinationLabel: StateFlow<String> = _destinationLabel
+
+    private val _destinationUri = MutableStateFlow(getDestinationUri())
+    val destinationUri: StateFlow<String?> = _destinationUri
+
     private val _syncContacts = MutableStateFlow(isCategoryEnabled("contacts", true))
     val syncContacts: StateFlow<Boolean> = _syncContacts
 
@@ -108,6 +117,37 @@ class SyncPreferences(context: Context) {
 
     fun getConnectedAccount(): String = prefs.getString(KEY_CONNECTED_ACCOUNT, "starsyria2500@gmail.com") ?: "starsyria2500@gmail.com"
 
+    fun isCloudEnabled(): Boolean = prefs.getBoolean(KEY_CLOUD_ENABLED, false)
+
+    fun setCloudEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_CLOUD_ENABLED, enabled).apply()
+        _cloudEnabled.value = enabled
+    }
+
+    fun getDestinationUri(): String? = prefs.getString(KEY_DESTINATION_URI, null)
+
+    fun getDestinationLabel(): String =
+        prefs.getString(KEY_DESTINATION_LABEL, "مساحة التطبيق الداخلية") ?: "مساحة التطبيق الداخلية"
+
+    fun setDestination(uri: String?, label: String) {
+        prefs.edit()
+            .putString(KEY_DESTINATION_URI, uri)
+            .putString(KEY_DESTINATION_LABEL, label)
+            .apply()
+        _destinationUri.value = uri
+        _destinationLabel.value = label
+    }
+
+    fun useInternalDestination() {
+        prefs.edit()
+            .remove(KEY_DESTINATION_URI)
+            .putString(KEY_DESTINATION_LABEL, "مساحة التطبيق الداخلية")
+            .apply()
+        _destinationUri.value = null
+        _destinationLabel.value = "مساحة التطبيق الداخلية"
+        setCloudEnabled(false)
+    }
+
     fun setCategoryEnabled(category: String, enabled: Boolean) {
         prefs.edit().putBoolean("cat_$category", enabled).apply()
         when (category) {
@@ -137,6 +177,9 @@ class SyncPreferences(context: Context) {
         private const val KEY_REQUIRE_CHARGING = "pref_require_charging"
         private const val KEY_CLIENT_ENCRYPTION = "pref_client_encryption"
         private const val KEY_CONNECTED_ACCOUNT = "pref_connected_account"
+        private const val KEY_CLOUD_ENABLED = "pref_cloud_enabled"
+        private const val KEY_DESTINATION_URI = "pref_destination_uri"
+        private const val KEY_DESTINATION_LABEL = "pref_destination_label"
         private const val KEY_MAX_FILE_SIZE = "pref_max_file_size"
     }
 }

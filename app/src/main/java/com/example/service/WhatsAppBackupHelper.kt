@@ -42,17 +42,6 @@ class WhatsAppBackupHelper(private val context: Context) {
                 }
             }
 
-            // Fallback sample values if empty or protected
-            if (count == 0) {
-                when (id) {
-                    "wa_images" -> { count = 142; size = 185L * 1024 * 1024 }
-                    "wa_videos" -> { count = 18; size = 420L * 1024 * 1024 }
-                    "wa_audio" -> { count = 64; size = 42L * 1024 * 1024 }
-                    "wa_docs" -> { count = 29; size = 68L * 1024 * 1024 }
-                    "wa_databases" -> { count = 3; size = 95L * 1024 * 1024 }
-                }
-            }
-
             categories.add(
                 WhatsAppMediaCategory(
                     id = id,

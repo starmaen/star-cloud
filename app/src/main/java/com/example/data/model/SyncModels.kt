@@ -34,16 +34,19 @@ enum class CloudProviderType(val displayName: String, val iconRes: String) {
     GOOGLE_DRIVE("Google Drive (الأساسي)", "google_drive"),
     DROPBOX("Dropbox (قريبًا)", "dropbox"),
     ONE_DRIVE("Microsoft OneDrive (قريبًا)", "onedrive"),
-    LOCAL_SECURE_STORAGE("Star Cloud Sandbox (مدمج)", "local_sandbox")
+    LOCAL_SECURE_STORAGE("مساحة التطبيق الداخلية", "local_storage"),
+    SAF_FOLDER("مجلد مختار (SAF)", "saf_folder")
 }
 
 data class CloudQuota(
-    val totalBytes: Long = 15L * 1024 * 1024 * 1024,
-    val usedBytes: Long = 4L * 1024 * 1024 * 1024,
-    val starCloudUsedBytes: Long = 1200L * 1024 * 1024
+    val totalBytes: Long = 0L,
+    val usedBytes: Long = 0L,
+    val starCloudUsedBytes: Long = 0L,
+    val availableBytes: Long? = null
 ) {
-    val freeBytes: Long get() = (totalBytes - usedBytes).coerceAtLeast(0)
+    val freeBytes: Long get() = availableBytes ?: (totalBytes - usedBytes).coerceAtLeast(0)
     val usedPercent: Float get() = if (totalBytes > 0) (usedBytes.toFloat() / totalBytes) else 0f
+    val hasAvailableSpace: Boolean get() = availableBytes != null
 }
 
 data class SyncFolderConfig(

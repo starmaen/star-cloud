@@ -39,6 +39,9 @@ fun DashboardScreen(
 ) {
     val deviceStorage by viewModel.deviceStorage.collectAsState()
     val cloudQuota by viewModel.cloudQuota.collectAsState()
+    val cloudEnabled by viewModel.cloudEnabled.collectAsState()
+    val destinationLabel by viewModel.destinationLabel.collectAsState()
+    val destinationReady by viewModel.destinationReady.collectAsState()
     val syncProgress by viewModel.syncProgress.collectAsState()
     val syncDirection by viewModel.syncDirection.collectAsState()
     val folders by viewModel.folderConfigs.collectAsState()
@@ -133,7 +136,11 @@ fun DashboardScreen(
         item {
             StorageMetricsCard(
                 deviceStorage = deviceStorage,
-                cloudQuota = cloudQuota
+                cloudQuota = cloudQuota,
+                destinationLabel = destinationLabel,
+                isCloudEnabled = cloudEnabled,
+                isDestinationReady = destinationReady,
+                onManageDestination = { viewModel.selectTab(ScreenTab.SETTINGS) }
             )
         }
 

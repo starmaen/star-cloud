@@ -7,10 +7,8 @@ import android.os.StatFs
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.StarCloudApp
-import com.example.data.cloud.RemoteFileMetadata
 import com.example.data.local.FolderConfigEntity
 import com.example.data.local.SyncLogEntity
-import com.example.data.model.CloudProviderType
 import com.example.data.model.CloudQuota
 import com.example.data.model.ConflictPolicy
 import com.example.data.model.ContactItem
@@ -21,12 +19,14 @@ import com.example.data.model.CallLogItem
 import com.example.data.model.SyncDirection
 import com.example.data.model.SyncProgressState
 import com.example.data.model.WhatsAppMediaCategory
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.UUID
 
@@ -37,13 +37,22 @@ enum class ScreenTab {
     SETTINGS
 }
 
-data class DeviceStorageInfo(
-    val totalBytes: Long = 64L * 1024 * 1024 * 1024,
-    val usedBytes: Long = 38L * 1024 * 1024 * 1024,
-    val freeBytes: Long = 26L * 1024 * 1024 * 1024
+data class StorageVolumeInfo(
+    val label: String,
+    val path: String,
+    val totalBytes: Long,
+    val usedBytes: Long,
+    val freeBytes: Long,
+    val isRemovable: Boolean
 ) {
     val usedRatio: Float get() = if (totalBytes > 0) (usedBytes.toFloat() / totalBytes) else 0f
 }
+
+data class DeviceStorageInfo(
+    val internal: StorageVolumeInfo? = null,
+    val appUsedBytes: Long = 0L,
+    val externalVolumes: List<StorageVolumeInfo> = emptyList()
+)
 
 class StarCloudViewModel(application: Application) : AndroidViewModel(application) {
 
@@ -74,6 +83,9 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     val clientEncryption = preferences.clientEncryption
     val connectedAccount = preferences.connectedAccount
     val maxFileSizeMb = preferences.maxFileSizeMb
+    val cloudEnabled = preferences.cloudEnabled
+    val destinationLabel = preferences.destinationLabel
+    val destinationUri = preferences.destinationUri
 
     val syncContactsPref = preferences.syncContacts
     val syncMessagesPref = preferences.syncMessages
@@ -107,8 +119,8 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     private val _appSearchQuery = MutableStateFlow("")
     val appSearchQuery: StateFlow<String> = _appSearchQuery.asStateFlow()
 
-    private val _selectedProvider = MutableStateFlow(CloudProviderType.GOOGLE_DRIVE)
-    val selectedProvider: StateFlow<CloudProviderType> = _selectedProvider.asStateFlow()
+    private val _destinationReady = MutableStateFlow(false)
+    val destinationReady: StateFlow<Boolean> = _destinationReady.asStateFlow()
 
     val syncProgress: StateFlow<SyncProgressState> = syncEngine.progressState
 
@@ -134,19 +146,67 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
 
     fun refreshStorageInfo() {
         viewModelScope.launch {
-            runCatching {
-                val stat = StatFs(Environment.getDataDirectory().path)
-                val total = stat.blockCountLong * stat.blockSizeLong
-                val free = stat.availableBlocksLong * stat.blockSizeLong
-                val used = (total - free).coerceAtLeast(0)
-                _deviceStorage.value = DeviceStorageInfo(total, used, free)
-            }
+            _deviceStorage.value = withContext(Dispatchers.IO) { readDeviceStorage() }
+            _destinationReady.value = cloudRegistry.destinationReady()
+            _cloudQuota.value = runCatching {
+                withContext(Dispatchers.IO) { cloudRegistry.getActiveProvider().getQuota() }
+            }.getOrDefault(CloudQuota())
+        }
+    }
 
-            runCatching {
-                val provider = cloudRegistry.getProvider(_selectedProvider.value)
-                _cloudQuota.value = provider.getQuota()
+    private fun readDeviceStorage(): DeviceStorageInfo {
+        val internal = runCatching {
+            val internalPath = runCatching { Environment.getExternalStorageDirectory().path }
+                .getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: Environment.getDataDirectory().path
+            val stat = StatFs(internalPath)
+            val total = stat.blockCountLong * stat.blockSizeLong
+            val free = stat.availableBlocksLong * stat.blockSizeLong
+            StorageVolumeInfo(
+                label = "ذاكرة الجهاز الداخلية",
+                path = internalPath,
+                totalBytes = total,
+                usedBytes = (total - free).coerceAtLeast(0),
+                freeBytes = free,
+                isRemovable = false
+            )
+        }.getOrNull()
+
+        val appUsed = runCatching {
+            app.filesDir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        }.getOrDefault(0L)
+
+        val volumes = mutableListOf<StorageVolumeInfo>()
+        val seen = mutableSetOf<String>()
+        runCatching {
+            app.getExternalFilesDirs(null).filterNotNull().forEach { dir ->
+                runCatching {
+                    val rootPath = dir.absolutePath.substringBefore("/Android/")
+                    if (rootPath.isBlank() || !seen.add(rootPath)) return@forEach
+                    val stat = StatFs(rootPath)
+                    val total = stat.blockCountLong * stat.blockSizeLong
+                    val free = stat.availableBlocksLong * stat.blockSizeLong
+                    val removable = !rootPath.contains("/emulated/")
+                    if (removable) {
+                        volumes += StorageVolumeInfo(
+                            label = "بطاقة SD",
+                            path = rootPath,
+                            totalBytes = total,
+                            usedBytes = (total - free).coerceAtLeast(0),
+                            freeBytes = free,
+                            isRemovable = true
+                        )
+                    }
+                }
             }
         }
+
+        return DeviceStorageInfo(
+            internal = internal,
+            appUsedBytes = appUsed,
+            externalVolumes = volumes
+        )
     }
 
     fun loadSelectiveData() {
@@ -221,7 +281,12 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     fun startSyncNow() {
         viewModelScope.launch {
             if (syncProgress.value.isSyncing) return@launch
-            val provider = cloudRegistry.getProvider(_selectedProvider.value)
+            val externalRequested = preferences.isCloudEnabled()
+            if (externalRequested && !cloudRegistry.destinationReady()) {
+                _userMessage.value = "إذن الكتابة على المجلد المختار غير متاح. أعد اختيار وجهة المزامنة من الإعدادات."
+                return@launch
+            }
+            val provider = cloudRegistry.getActiveProvider()
             val success = syncEngine.executeSync(
                 provider = provider,
                 direction = syncDirection.value,
@@ -231,7 +296,50 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
                 selectedApps = _installedApps.value.filter { it.isSelected }
             )
             refreshStorageInfo()
-            _userMessage.value = if (success) "اكتملت المزامنة السحابية بنجاح!" else "حدث تنبيه أثناء المزامنة، راجع السجلات"
+            val destination = if (externalRequested) {
+                preferences.getDestinationLabel()
+            } else {
+                "مساحة التطبيق الداخلية"
+            }
+            _userMessage.value = if (success) {
+                "تمت المزامنة إلى $destination. تجد الملفات داخل مجلد Star Cloud."
+            } else {
+                "حدث خطأ أثناء المزامنة، راجع سجل العمليات"
+            }
+        }
+    }
+
+    fun setDestination(uri: Uri, label: String) {
+        val granted = app.contentResolver.persistedUriPermissions.any {
+            it.uri == uri && it.isWritePermission
+        }
+        if (!granted) {
+            _userMessage.value = "تعذر الحصول على إذن الكتابة على المجلد. اختر مجلدًا آخر."
+            return
+        }
+        preferences.setDestination(uri.toString(), label)
+        preferences.setCloudEnabled(true)
+        refreshStorageInfo()
+        _userMessage.value = "تم ربط الوجهة: $label. ستُحفظ الملفات داخل مجلد Star Cloud."
+    }
+
+    fun useInternalStorage() {
+        preferences.useInternalDestination()
+        refreshStorageInfo()
+        _userMessage.value = "تم اختيار مساحة التطبيق الداخلية. المزامنة السحابية اختيارية ويمكن تفعيلها لاحقًا."
+    }
+
+    fun setCloudEnabled(enabled: Boolean) {
+        if (enabled && preferences.getDestinationUri() == null) {
+            _userMessage.value = "اختر مجلد الوجهة أولًا من الخيارات أدناه."
+            return
+        }
+        preferences.setCloudEnabled(enabled)
+        refreshStorageInfo()
+        _userMessage.value = if (enabled) {
+            "تم تفعيل المزامنة إلى ${preferences.getDestinationLabel()}"
+        } else {
+            "تم تحويل المزامنة إلى مساحة التطبيق الداخلية"
         }
     }
 
@@ -257,14 +365,6 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     fun setWifiOnly(enabled: Boolean) = preferences.setWifiOnly(enabled)
     fun setRequireCharging(enabled: Boolean) = preferences.setRequireCharging(enabled)
     fun setClientEncryption(enabled: Boolean) = preferences.setClientEncryption(enabled)
-    fun setConnectedAccount(account: String) {
-        preferences.setConnectedAccount(account)
-        _userMessage.value = "تم تحديث حساب Google Drive إلى: $account"
-    }
     fun setCategoryToggle(category: String, enabled: Boolean) = preferences.setCategoryEnabled(category, enabled)
     fun setMaxFileSize(mb: Int) = preferences.setMaxFileSizeMb(mb)
-    fun setCloudProvider(type: CloudProviderType) {
-        _selectedProvider.value = type
-        refreshStorageInfo()
-    }
 }
