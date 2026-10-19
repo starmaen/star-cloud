@@ -7,12 +7,20 @@ import com.example.data.model.CloudProviderType
 
 class CloudProviderRegistry(
     private val context: Context,
-    private val preferences: SyncPreferences
+    private val preferences: SyncPreferences,
+    private val googleAccountManager: GoogleAccountManager
 ) {
     private val localProvider = LocalCloudProvider(context)
 
     fun getActiveProvider(): CloudStorageProvider {
         if (!preferences.isCloudEnabled()) return localProvider
+        if (preferences.isGoogleDriveMode()) {
+            return if (googleAccountManager.isSignedIn()) {
+                GoogleDriveProvider(context, googleAccountManager)
+            } else {
+                localProvider
+            }
+        }
         val uri = destinationUri() ?: return localProvider
         if (!hasWritePermission(uri)) return localProvider
         return SafCloudProvider(context, uri, detectType(uri))
@@ -28,6 +36,10 @@ class CloudProviderRegistry(
 
     fun getLocalProvider(): CloudStorageProvider = localProvider
 
+    fun googleAccount(): GoogleAccountManager = googleAccountManager
+
+    fun isGoogleDriveMode(): Boolean = preferences.isGoogleDriveMode()
+
     fun destinationUri(): Uri? = preferences.getDestinationUri()?.let { runCatching { Uri.parse(it) }.getOrNull() }
 
     fun hasWritePermission(uri: Uri): Boolean {
@@ -37,11 +49,15 @@ class CloudProviderRegistry(
     }
 
     fun destinationReady(): Boolean {
+        if (preferences.isGoogleDriveMode()) {
+            return googleAccountManager.isSignedIn()
+        }
         val uri = destinationUri() ?: return false
         return hasWritePermission(uri)
     }
 
     fun destinationType(): CloudProviderType {
+        if (preferences.isGoogleDriveMode()) return CloudProviderType.GOOGLE_DRIVE
         val uri = destinationUri() ?: return CloudProviderType.LOCAL_SECURE_STORAGE
         return detectType(uri)
     }

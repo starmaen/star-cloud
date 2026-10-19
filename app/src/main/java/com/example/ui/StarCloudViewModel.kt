@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.app.Application
+import android.content.Intent
 import android.net.Uri
 import android.os.Environment
 import android.os.StatFs
@@ -19,6 +20,9 @@ import com.example.data.model.CallLogItem
 import com.example.data.model.SyncDirection
 import com.example.data.model.SyncProgressState
 import com.example.data.model.WhatsAppMediaCategory
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -86,6 +90,8 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     val cloudEnabled = preferences.cloudEnabled
     val destinationLabel = preferences.destinationLabel
     val destinationUri = preferences.destinationUri
+    val googleDriveMode = preferences.googleDriveMode
+    val googleEmail = preferences.googleEmail
 
     val syncContactsPref = preferences.syncContacts
     val syncMessagesPref = preferences.syncMessages
@@ -277,12 +283,59 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
         _appSearchQuery.value = query
     }
 
+    fun googleSignInIntent(): Intent = app.googleAccountManager.signInIntent()
+
+    fun onGoogleSignInResult(data: Intent?) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    GoogleSignIn.getSignedInAccountFromIntent(data)
+                        .getResult(ApiException::class.java)
+                }
+            }
+            result.onSuccess { account ->
+                val email = account?.email
+                if (account == null || email.isNullOrBlank()) {
+                    _userMessage.value = "لم يتم اختيار أي حساب Google"
+                    return@onSuccess
+                }
+                preferences.setGoogleEmail(email)
+                preferences.setGoogleDriveMode(true)
+                preferences.setCloudEnabled(true)
+                _userMessage.value = "تم تسجيل الدخول: $email. ستُرفع الملفات إلى مجلد Star Cloud في Google Drive."
+                refreshStorageInfo()
+            }.onFailure { error ->
+                val message = if ((error as? ApiException)?.statusCode == CommonStatusCodes.SIGN_IN_CANCELLED) {
+                    "تم إلغاء تسجيل الدخول إلى Google"
+                } else {
+                    "فشل تسجيل الدخول إلى Google (${error.message}). تأكد من تفعيل Google Drive API وإضافة بصمة التطبيق SHA-1 في مشروع Google Cloud."
+                }
+                _userMessage.value = message
+            }
+        }
+    }
+
+    fun signOutGoogle() {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { app.googleAccountManager.signOut() }
+            preferences.setGoogleEmail(null)
+            preferences.setGoogleDriveMode(false)
+            preferences.setCloudEnabled(false)
+            _userMessage.value = "تم تسجيل الخروج من Google. المزامنة الآن محلية."
+            refreshStorageInfo()
+        }
+    }
+
     fun startSyncNow() {
         viewModelScope.launch {
             if (syncProgress.value.isSyncing) return@launch
             val externalRequested = preferences.isCloudEnabled()
             if (externalRequested && !cloudRegistry.destinationReady()) {
-                _userMessage.value = "إذن الكتابة على المجلد المختار غير متاح. أعد اختيار وجهة المزامنة من الإعدادات."
+                _userMessage.value = if (preferences.isGoogleDriveMode()) {
+                    "سجّل الدخول بحساب Google أولًا من الإعدادات لتشغيل المزامنة السحابية."
+                } else {
+                    "إذن الكتابة على المجلد المختار غير متاح. أعد اختيار وجهة المزامنة من الإعدادات."
+                }
                 return@launch
             }
             if (preferences.syncContacts.value && _contacts.value.isEmpty()) {
@@ -301,10 +354,11 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
                 selectedApps = _installedApps.value.filter { it.isSelected }
             )
             refreshStorageInfo()
-            val destination = if (externalRequested) {
-                preferences.getDestinationLabel()
-            } else {
-                "مساحة التطبيق الداخلية"
+            val destination = when {
+                !externalRequested -> "مساحة التطبيق الداخلية"
+                preferences.isGoogleDriveMode() ->
+                    "Google Drive (${preferences.getGoogleEmail() ?: "حسابك"})"
+                else -> preferences.getDestinationLabel()
             }
             _userMessage.value = if (success) {
                 "تمت المزامنة إلى $destination. تجد الملفات داخل مجلد Star Cloud."
@@ -335,14 +389,19 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     fun setCloudEnabled(enabled: Boolean) {
-        if (enabled && preferences.getDestinationUri() == null) {
-            _userMessage.value = "اختر مجلد الوجهة أولًا من الخيارات أدناه."
+        if (enabled && preferences.getDestinationUri() == null && !preferences.isGoogleDriveMode()) {
+            _userMessage.value = "سجّل الدخول بحساب Google أو اختر مجلدًا أولًا."
             return
         }
         preferences.setCloudEnabled(enabled)
         refreshStorageInfo()
+        val target = if (preferences.isGoogleDriveMode()) {
+            "Google Drive (${preferences.getGoogleEmail() ?: "حسابك"})"
+        } else {
+            preferences.getDestinationLabel()
+        }
         _userMessage.value = if (enabled) {
-            "تم تفعيل المزامنة إلى ${preferences.getDestinationLabel()}"
+            "تم تفعيل المزامنة إلى $target"
         } else {
             "تم تحويل المزامنة إلى مساحة التطبيق الداخلية"
         }

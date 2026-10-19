@@ -3,6 +3,7 @@ package com.example
 import android.app.Application
 import android.util.Log
 import com.example.data.cloud.CloudProviderRegistry
+import com.example.data.cloud.GoogleAccountManager
 import com.example.data.local.StarCloudDatabase
 import com.example.data.local.SyncPreferences
 import com.example.service.AppBackupHelper
@@ -17,6 +18,7 @@ class StarCloudApp : Application() {
     lateinit var database: StarCloudDatabase private set
     lateinit var preferences: SyncPreferences private set
     lateinit var cloudRegistry: CloudProviderRegistry private set
+    lateinit var googleAccountManager: GoogleAccountManager private set
     lateinit var contactsHelper: ContactsBackupHelper private set
     lateinit var smsHelper: SmsCallLogBackupHelper private set
     lateinit var waHelper: WhatsAppBackupHelper private set
@@ -52,7 +54,8 @@ class StarCloudApp : Application() {
 
         database = StarCloudDatabase.getDatabase(this)
         preferences = SyncPreferences(this)
-        cloudRegistry = CloudProviderRegistry(this, preferences)
+        googleAccountManager = GoogleAccountManager(this)
+        cloudRegistry = CloudProviderRegistry(this, preferences, googleAccountManager)
         contactsHelper = ContactsBackupHelper(this)
         smsHelper = SmsCallLogBackupHelper(this)
         waHelper = WhatsAppBackupHelper(this)

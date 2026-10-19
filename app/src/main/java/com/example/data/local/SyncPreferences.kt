@@ -41,6 +41,12 @@ class SyncPreferences(context: Context) {
     private val _destinationUri = MutableStateFlow(getDestinationUri())
     val destinationUri: StateFlow<String?> = _destinationUri
 
+    private val _googleDriveMode = MutableStateFlow(isGoogleDriveMode())
+    val googleDriveMode: StateFlow<Boolean> = _googleDriveMode
+
+    private val _googleEmail = MutableStateFlow(getGoogleEmail())
+    val googleEmail: StateFlow<String?> = _googleEmail
+
     private val _syncContacts = MutableStateFlow(isCategoryEnabled("contacts", true))
     val syncContacts: StateFlow<Boolean> = _syncContacts
 
@@ -115,7 +121,22 @@ class SyncPreferences(context: Context) {
         _connectedAccount.value = account
     }
 
-    fun getConnectedAccount(): String = prefs.getString(KEY_CONNECTED_ACCOUNT, "starsyria2500@gmail.com") ?: "starsyria2500@gmail.com"
+    fun isGoogleDriveMode(): Boolean = prefs.getBoolean(KEY_GOOGLE_MODE, false)
+
+    fun setGoogleDriveMode(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_GOOGLE_MODE, enabled).apply()
+        _googleDriveMode.value = enabled
+    }
+
+    fun getGoogleEmail(): String? = prefs.getString(KEY_GOOGLE_EMAIL, null)
+
+    fun setGoogleEmail(email: String?) {
+        prefs.edit().putString(KEY_GOOGLE_EMAIL, email).apply()
+        _googleEmail.value = email
+        _connectedAccount.value = email ?: ""
+    }
+
+    fun getConnectedAccount(): String = getGoogleEmail() ?: ""
 
     fun isCloudEnabled(): Boolean = prefs.getBoolean(KEY_CLOUD_ENABLED, false)
 
@@ -133,9 +154,11 @@ class SyncPreferences(context: Context) {
         prefs.edit()
             .putString(KEY_DESTINATION_URI, uri)
             .putString(KEY_DESTINATION_LABEL, label)
+            .putBoolean(KEY_GOOGLE_MODE, false)
             .apply()
         _destinationUri.value = uri
         _destinationLabel.value = label
+        _googleDriveMode.value = false
     }
 
     fun useInternalDestination() {
@@ -181,5 +204,7 @@ class SyncPreferences(context: Context) {
         private const val KEY_DESTINATION_URI = "pref_destination_uri"
         private const val KEY_DESTINATION_LABEL = "pref_destination_label"
         private const val KEY_MAX_FILE_SIZE = "pref_max_file_size"
+        private const val KEY_GOOGLE_MODE = "pref_google_drive_mode"
+        private const val KEY_GOOGLE_EMAIL = "pref_google_email"
     }
 }

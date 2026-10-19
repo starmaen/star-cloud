@@ -2,7 +2,6 @@ package com.example.ui.screens
 
 import android.content.Intent
 import android.net.Uri
-import android.provider.DocumentsContract
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -40,6 +39,14 @@ fun SettingsScreen(
     val cloudEnabled by viewModel.cloudEnabled.collectAsState()
     val destinationLabel by viewModel.destinationLabel.collectAsState()
     val destinationReady by viewModel.destinationReady.collectAsState()
+    val googleEmail by viewModel.googleEmail.collectAsState()
+    val googleDriveMode by viewModel.googleDriveMode.collectAsState()
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        viewModel.onGoogleSignInResult(result.data)
+    }
 
     val folderPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -76,6 +83,76 @@ fun SettingsScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
             ) {
                 Column(modifier = Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(StarBluePrimary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.AccountCircle, contentDescription = null, tint = StarBluePrimary)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "حساب Google",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Text(
+                                text = googleEmail ?: "لم يتم تسجيل الدخول",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = if (googleEmail != null) {
+                            "المزامنة السحابية الحقيقية مفعّلة. ستجد مجلد Star Cloud داخل Google Drive الخاص بحسابك."
+                        } else {
+                            "سجّل الدخول بحساب Google لرفع النسخ مباشرة إلى Google Drive. لا نرى كلمة المرور، والصلاحية مقصورة على الملفات التي ينشئها التطبيق."
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+                    if (googleEmail == null) {
+                        Button(
+                            onClick = { googleSignInLauncher.launch(viewModel.googleSignInIntent()) },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Login, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("تسجيل الدخول بحساب Google")
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = { viewModel.signOutGoogle() },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Logout, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("تسجيل الخروج")
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -99,7 +176,11 @@ fun SettingsScreen(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (cloudEnabled) destinationLabel else "مساحة التطبيق الداخلية",
+                                    text = when {
+                                        googleDriveMode && cloudEnabled -> "Google Drive"
+                                        cloudEnabled -> destinationLabel
+                                        else -> "مساحة التطبيق الداخلية"
+                                    },
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.primary,
                                     fontWeight = FontWeight.SemiBold
@@ -117,9 +198,9 @@ fun SettingsScreen(
                     Text(
                         text = if (cloudEnabled) {
                             if (destinationReady) "الوجهة جاهزة ويمكن الكتابة فيها."
-                            else "الوجهة تحتاج إلى إذن كتابة. أعد اختيار المجلد."
+                            else "سجّل الدخول بحساب Google أو أعد اختيار مجلد الكتابة."
                         } else {
-                            "المزامنة المحلية فقط. فعّل المفتاح لاختيار مجلد على الهاتف أو بطاقة SD أو Google Drive."
+                            "المزامنة المحلية فقط. فعّل المفتاح لاستخدام Google Drive أو مجلد على الهاتف أو بطاقة SD."
                         },
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -159,27 +240,8 @@ fun SettingsScreen(
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedButton(
-                        onClick = {
-                            val driveRoot = DocumentsContract.buildTreeDocumentUri(
-                                "com.google.android.apps.docs.storage",
-                                "root"
-                            )
-                            runCatching { folderPicker.launch(driveRoot) }
-                                .onFailure { folderPicker.launch(null) }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Default.Cloud, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("ربط Google Drive")
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "عند اختيار Google Drive ستفتح نافذة Google لتسجيل الدخول واختيار المجلد. لا نطلب كلمة المرور، والوصول محصور بالمجلد الذي تختاره. تُحفظ الملفات داخل مجلد Star Cloud.",
+                        text = "هذا الخيار لمجلدات الهاتف أو بطاقة SD. لمزامنة Google Drive استخدم تسجيل الدخول أعلاه.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
