@@ -1,6 +1,13 @@
 package com.example
 
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Intent
+import android.graphics.Typeface
 import android.os.Bundle
+import android.widget.ScrollView
+import android.widget.TextView
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -26,6 +33,7 @@ import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SyncActivityScreen
 import com.example.ui.screens.TechnicalProposalDialog
 import com.example.ui.theme.StarCloudTheme
+import java.io.File
 
 data class NavigationTabItem(
     val tab: ScreenTab,
@@ -42,6 +50,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        readCrashReport()?.let { report ->
+            showCrashReportDialog(report)
+            return
+        }
 
         setContent {
             StarCloudTheme {
@@ -151,5 +164,47 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun readCrashReport(): String? {
+        val file = File(filesDir, "last_crash.txt")
+        if (!file.exists()) return null
+        return runCatching { file.readText() }.getOrNull()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun showCrashReportDialog(report: String) {
+        val logView = TextView(this).apply {
+            text = report
+            textSize = 11f
+            typeface = Typeface.MONOSPACE
+            setTextIsSelectable(true)
+            setPadding(32, 24, 32, 24)
+        }
+        val scrollView = ScrollView(this).apply { addView(logView) }
+
+        AlertDialog.Builder(this)
+            .setTitle("تقرير الإغلاق السابق")
+            .setMessage("أرسل هذا النص للمطوّر لتحديد سبب الإغلاق، أو احذفه لمحاولة التشغيل.")
+            .setView(scrollView)
+            .setCancelable(false)
+            .setPositiveButton("نسخ") { _, _ ->
+                val clipboard = getSystemService(ClipboardManager::class.java)
+                clipboard?.setPrimaryClip(ClipData.newPlainText("Star Cloud crash", report))
+                showCrashReportDialog(report)
+            }
+            .setNeutralButton("مشاركة") { _, _ ->
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, report)
+                }
+                runCatching {
+                    startActivity(Intent.createChooser(shareIntent, "مشاركة تقرير الإغلاق"))
+                }
+            }
+            .setNegativeButton("حذف والمتابعة") { _, _ ->
+                runCatching { File(filesDir, "last_crash.txt").delete() }
+                recreate()
+            }
+            .show()
     }
 }

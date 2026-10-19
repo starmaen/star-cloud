@@ -24,13 +24,29 @@ class StarCloudApp : Application() {
     lateinit var syncEngine: SyncEngine private set
     val syncScheduler: SyncScheduler by lazy { SyncScheduler(this, preferences) }
 
+    private fun writeCrashReport(thread: Thread, throwable: Throwable) {
+        val report = buildString {
+            appendLine("Star Cloud crash report")
+            appendLine("Time: ${java.util.Date()}")
+            appendLine("Thread: ${thread.name}")
+            appendLine("Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} (API ${android.os.Build.VERSION.SDK_INT})")
+            appendLine("App: $packageName ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+            appendLine()
+            append(Log.getStackTraceString(throwable))
+        }
+        java.io.File(filesDir, "last_crash.txt").writeText(report)
+        getExternalFilesDir(null)?.let { dir ->
+            runCatching { java.io.File(dir, "last_crash.txt").writeText(report) }
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
-        // Global crash prevention handler
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            Log.e("StarCloudApp", "Caught unhandled exception safely: ${throwable.message}", throwable)
+            Log.e("StarCloudApp", "Uncaught exception: ${throwable.message}", throwable)
+            runCatching { writeCrashReport(thread, throwable) }
             defaultHandler?.uncaughtException(thread, throwable)
         }
 
