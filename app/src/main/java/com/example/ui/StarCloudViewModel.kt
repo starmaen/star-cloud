@@ -21,8 +21,8 @@ import com.example.data.model.SyncDirection
 import com.example.data.model.SyncProgressState
 import com.example.data.model.WhatsAppMediaCategory
 import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.common.api.CommonStatusCodes
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -305,7 +305,7 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
                 _userMessage.value = "تم تسجيل الدخول: $email. ستُرفع الملفات إلى مجلد Star Cloud في Google Drive."
                 refreshStorageInfo()
             }.onFailure { error ->
-                val message = if ((error as? ApiException)?.statusCode == CommonStatusCodes.SIGN_IN_CANCELLED) {
+                val message = if ((error as? ApiException)?.statusCode == GoogleSignInStatusCodes.SIGN_IN_CANCELLED) {
                     "تم إلغاء تسجيل الدخول إلى Google"
                 } else {
                     "فشل تسجيل الدخول إلى Google (${error.message}). تأكد من تفعيل Google Drive API وإضافة بصمة التطبيق SHA-1 في مشروع Google Cloud."
