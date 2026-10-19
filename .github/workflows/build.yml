@@ -53,7 +53,7 @@ jobs:
           gh release delete-asset latest Star_Cloud.apk -y >/dev/null 2>&1 || true
           gh release delete-asset latest app-debug.apk -y >/dev/null 2>&1 || true
           gh release upload latest app/build/outputs/apk/debug/app-debug.apk
-          ASSET_ID=$(gh release view latest --json assets --jq '.assets[] | select(.name=="app-debug.apk") | .id' | head -n1)
+          ASSET_ID=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/latest" --jq '.assets[] | select(.name=="app-debug.apk") | .id' | head -n1)
           if [ -n "$ASSET_ID" ]; then
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" -f name=Star_Cloud.apk >/dev/null
           fi
