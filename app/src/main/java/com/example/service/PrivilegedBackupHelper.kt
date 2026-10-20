@@ -94,10 +94,24 @@ class PrivilegedBackupHelper(private val context: Context) {
     }
 
     private fun runShizuku(command: Array<String>): InputStream {
-        val process = Shizuku.newProcess(command, null, null)
-            ?: throw IllegalStateException("فشل تشغيل أمر Shizuku")
+        val process = shizukuNewProcess(command)
+            ?: throw IllegalStateException(
+                "تعذّر تشغيل الأمر عبر Shizuku. تأكد من منح الصلاحية وأن خدمة Shizuku تعمل."
+            )
         return process.inputStream
     }
+
+    private fun shizukuNewProcess(command: Array<String>): Process? = runCatching {
+        val method = Shizuku::class.java.getDeclaredMethod(
+            "newProcess",
+            Array<String>::class.java,
+            Array<String>::class.java,
+            String::class.java
+        )
+        method.isAccessible = true
+        @Suppress("UNCHECKED_CAST")
+        method.invoke(null, command, null, null) as? Process
+    }.getOrNull()
 
     companion object {
         const val SHIZUKU_REQUEST_CODE = 4210
