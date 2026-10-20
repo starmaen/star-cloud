@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import android.content.Context
 import androidx.compose.ui.unit.dp
 import com.example.ui.RestorableBackup
 import com.example.ui.StarCloudViewModel
@@ -53,6 +55,7 @@ fun RestoreScreen(
     val entries by viewModel.restoreEntries.collectAsState()
     val selected by viewModel.restoreSelected.collectAsState()
     val loading by viewModel.restoreLoading.collectAsState()
+    val restored by viewModel.restoredFiles.collectAsState()
 
     val targetPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -158,6 +161,59 @@ fun RestoreScreen(
                     Text("استرجاع المحدد (${selected.size}) إلى مجلد")
                 }
             }
+
+            if (restored.isNotEmpty()) {
+                item {
+                    Card(
+                        shape = RoundedCornerShape(18.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Column(Modifier.padding(16.dp)) {
+                            Text(
+                                "تم استرجاع ${restored.size} ملف",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                            val apks = restored.filter {
+                                it.remoteName.endsWith(".apk", ignoreCase = true)
+                            }
+                            if (apks.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                apks.forEach { file ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            file.remoteName.substringAfterLast('/'),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            modifier = Modifier.weight(1f)
+                                        )
+                                        TextButton(onClick = { installApk(context, file.uri) }) {
+                                            Text("تثبيت")
+                                        }
+                                    }
+                                }
+                            }
+                            val dataArchives = restored.filter {
+                                it.remoteName.endsWith(".tar.gz", ignoreCase = true)
+                            }
+                            if (dataArchives.isNotEmpty()) {
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "تم حفظ ${dataArchives.size} أرشيف بيانات تطبيقات (.tar.gz) في المجلد المختار. " +
+                                        "استخراجه إلى /data/user/0 يتطلب Root.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         } else if (!loading) {
             item {
                 Card(shape = RoundedCornerShape(20.dp)) {
@@ -217,4 +273,13 @@ private fun formatSize(bytes: Long): String {
         mb >= 1 -> String.format(Locale.US, "%.1f MB", mb)
         else -> String.format(Locale.US, "%.0f KB", kb)
     }
+}
+
+
+private fun installApk(context: Context, uri: Uri) {
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+        setDataAndType(uri, "application/vnd.android.package-archive")
+        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    runCatching { context.startActivity(intent) }
 }

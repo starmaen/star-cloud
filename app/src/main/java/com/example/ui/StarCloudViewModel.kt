@@ -21,6 +21,7 @@ import com.example.data.model.SyncDirection
 import com.example.data.model.SyncProgressState
 import com.example.data.model.WhatsAppMediaCategory
 import com.example.service.PrivilegeMode
+import com.example.service.RestoredFile
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
@@ -148,6 +149,9 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
 
     private val _restoreEntries = MutableStateFlow<List<RestorableBackup>>(emptyList())
     val restoreEntries: StateFlow<List<RestorableBackup>> = _restoreEntries.asStateFlow()
+
+    private val _restoredFiles = MutableStateFlow<List<RestoredFile>>(emptyList())
+    val restoredFiles: StateFlow<List<RestoredFile>> = _restoredFiles.asStateFlow()
 
     private val _restoreSelected = MutableStateFlow<Set<String>>(emptySet())
     val restoreSelected: StateFlow<Set<String>> = _restoreSelected.asStateFlow()
@@ -438,6 +442,7 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     fun loadRestoreEntries() {
         viewModelScope.launch {
             _restoreLoading.value = true
+            _restoredFiles.value = emptyList()
             val provider = cloudRegistry.getRemoteProvider()
             val list = runCatching { syncEngine.listRestorableBackups(provider) }.getOrDefault(emptyList())
             _restoreEntries.value = list.map { entry ->
@@ -473,11 +478,13 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
         val entries = _restoreEntries.value.filter { it.entry.fileId in selectedIds }.map { it.entry }
         viewModelScope.launch {
             val provider = cloudRegistry.getRemoteProvider()
-            val count = runCatching {
+            _restoredFiles.value = emptyList()
+            val restored = runCatching {
                 syncEngine.restoreBackups(provider, entries, targetTreeUri)
-            }.getOrDefault(0)
-            _userMessage.value = if (count > 0) {
-                "تم استرجاع $count ملف إلى المجلد المختار"
+            }.getOrDefault(emptyList())
+            _restoredFiles.value = restored
+            _userMessage.value = if (restored.isNotEmpty()) {
+                "تم استرجاع ${restored.size} ملف إلى المجلد المختار"
             } else {
                 "تعذّر الاسترجاع. تحقق من الصلاحيات وحجم الملفات (الحد 200MB للملف)."
             }

@@ -244,12 +244,12 @@ fun SettingsScreen(
                     ) {
                         Icon(Icons.Default.FolderOpen, contentDescription = null)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("اختيار مجلد (الهاتف / SD / Google Drive)")
+                        Text("اختيار مجلد (الهاتف / SD / أي سحابة)")
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
-                        text = "افتح المنتقي واختر Google Drive ← مجلد Star Cloud لرفع الملفات فعلياً إلى حسابك. هذا الخيار لا يحتاج أي إعداد إضافي.",
+                        text = "افتح المنتقي واختر Google Drive أو Dropbox أو OneDrive أو MEGA أو pCloud أو Nextcloud أو أي مزوّد مثبّت على الجهاز ← مجلد Star Cloud. يعمل هذا الخيار عبر SAF بلا أي إعداد إضافي، ويستخدم حسابك في كل خدمة كما هو.",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )

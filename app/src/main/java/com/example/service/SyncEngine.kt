@@ -29,6 +29,8 @@ import java.io.FileInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
+data class RestoredFile(val remoteName: String, val uri: Uri)
+
 private const val MAX_RESTORE_BYTES = 200L * 1024L * 1024L
 
 class SyncEngine(
@@ -391,6 +393,7 @@ class SyncEngine(
             // 5. Installed APKs
             if (preferences.syncApps.value && !isCancelled) {
                 val chosenApps = selectedApps.filter { it.isSelected }
+                val appsManifest = JSONArray()
                 for (app in chosenApps) {
                     if (isCancelled) break
                     _progressState.value = _progressState.value.copy(
@@ -400,6 +403,8 @@ class SyncEngine(
                         currentProgress = 0.85f
                     )
 
+                    var uploadedApkName: String? = null
+                    var uploadedData = false
                     val apkFile = appHelper.extractApk(app)
                     if (apkFile != null && apkFile.exists()) {
                         val apkRes = FileInputStream(apkFile).use { inStream ->
@@ -417,6 +422,7 @@ class SyncEngine(
                             )
                         }
                         if (apkRes.isSuccess) {
+                            uploadedApkName = apkFile.name
                             totalProcessed++
                             totalBytesTransferred += apkRes.getOrNull()?.sizeBytes ?: apkFile.length()
                         } else {
@@ -446,6 +452,7 @@ class SyncEngine(
                                     )
                                 }
                                 if (upload.isSuccess) {
+                                    uploadedData = true
                                     totalProcessed++
                                     totalBytesTransferred += dataFile.length()
                                 } else {
@@ -459,6 +466,42 @@ class SyncEngine(
                             errorReason = it.message ?: "تعذّر نسخ بيانات ${app.appName}"
                         }
                         runCatching { dataFile.delete() }
+                    }
+
+                    if (uploadedApkName != null || uploadedData) {
+                        appsManifest.put(
+                            JSONObject().apply {
+                                put("packageName", app.packageName)
+                                put("appName", app.appName)
+                                put("versionName", app.versionName)
+                                put("isSystemApp", app.isSystemApp)
+                                put("apkFile", uploadedApkName ?: JSONObject.NULL)
+                                put(
+                                    "dataFile",
+                                    if (uploadedData) "Applications/${app.packageName}/data.tar.gz" else JSONObject.NULL
+                                )
+                            }
+                        )
+                    }
+                }
+
+                if (appsManifest.length() > 0) {
+                    val manifestBytes = JSONObject().apply {
+                        put("generatedAt", System.currentTimeMillis())
+                        put("apps", appsManifest)
+                    }.toString().toByteArray(Charsets.UTF_8)
+                    val manifestRes = provider.uploadFile(
+                        remotePath = "Applications",
+                        fileName = "apps_manifest.json",
+                        fileSize = manifestBytes.size.toLong(),
+                        inputStream = ByteArrayInputStream(manifestBytes),
+                        mimeType = "application/json",
+                        onProgress = { _, _ -> }
+                    )
+                    if (manifestRes.isFailure) {
+                        hasError = true
+                        errorReason = manifestRes.exceptionOrNull()?.message
+                            ?: "فشل رفع بيان التطبيقات"
                     }
                 }
             }
@@ -528,10 +571,10 @@ class SyncEngine(
         provider: CloudStorageProvider,
         entries: List<RemoteFileMetadata>,
         targetTreeUri: Uri
-    ): Int = withContext(Dispatchers.IO) {
+    ): List<RestoredFile> = withContext(Dispatchers.IO) {
         val targetDir = DocumentFile.fromTreeUri(context, targetTreeUri)
-            ?: return@withContext 0
-        var restored = 0
+            ?: return@withContext emptyList()
+        val restored = mutableListOf<RestoredFile>()
         for (entry in entries) {
             if (entry.isDirectory) continue
             if (entry.sizeBytes > MAX_RESTORE_BYTES) continue
@@ -545,7 +588,7 @@ class SyncEngine(
                     )
                     if (created != null) {
                         context.contentResolver.openOutputStream(created.uri)?.use { it.write(bytes) }
-                        restored++
+                        restored += RestoredFile(entry.name, created.uri)
                     }
                 }
             }
