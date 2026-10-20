@@ -61,15 +61,3 @@ jobs:
           if [ -n "$ASSET_ID" ]; then
             gh api -X PATCH "repos/${GITHUB_REPOSITORY}/releases/assets/${ASSET_ID}" -f name=Star_Cloud.apk >/dev/null
           fi
-
-      - name: Sync APK to repository root
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "star-cloud-bot"
-          git config user.email "starcloud-bot@users.noreply.github.com"
-          cp app/build/outputs/apk/debug/app-debug.apk Star_Cloud.apk
-          if ! git diff --quiet -- Star_Cloud.apk; then
-            git add Star_Cloud.apk
-            git commit -m "chore: update Star_Cloud.apk [skip ci]"
-            git push origin HEAD:main
-          fi

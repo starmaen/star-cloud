@@ -36,6 +36,22 @@ class CloudProviderRegistry(
 
     fun getLocalProvider(): CloudStorageProvider = localProvider
 
+    /**
+     * Provider used by the restore screen. It ignores the cloud-sync toggle
+     * so a user can always browse and restore an existing backup, as long as
+     * a destination was configured.
+     */
+    fun getRemoteProvider(): CloudStorageProvider {
+        if (preferences.isGoogleDriveMode() && googleAccountManager.isSignedIn()) {
+            return GoogleDriveProvider(context, googleAccountManager)
+        }
+        val uri = destinationUri()
+        if (uri != null && hasWritePermission(uri)) {
+            return SafCloudProvider(context, uri, detectType(uri))
+        }
+        return localProvider
+    }
+
     fun googleAccount(): GoogleAccountManager = googleAccountManager
 
     fun isGoogleDriveMode(): Boolean = preferences.isGoogleDriveMode()

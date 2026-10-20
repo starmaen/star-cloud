@@ -8,6 +8,7 @@ import com.example.data.local.StarCloudDatabase
 import com.example.data.local.SyncPreferences
 import com.example.service.AppBackupHelper
 import com.example.service.ContactsBackupHelper
+import com.example.service.PrivilegedBackupHelper
 import com.example.service.SmsCallLogBackupHelper
 import com.example.service.SyncEngine
 import com.example.service.SyncScheduler
@@ -23,6 +24,7 @@ class StarCloudApp : Application() {
     lateinit var smsHelper: SmsCallLogBackupHelper private set
     lateinit var waHelper: WhatsAppBackupHelper private set
     lateinit var appHelper: AppBackupHelper private set
+    lateinit var privilegedHelper: PrivilegedBackupHelper private set
     lateinit var syncEngine: SyncEngine private set
     val syncScheduler: SyncScheduler by lazy { SyncScheduler(this, preferences) }
 
@@ -60,6 +62,7 @@ class StarCloudApp : Application() {
         smsHelper = SmsCallLogBackupHelper(this)
         waHelper = WhatsAppBackupHelper(this)
         appHelper = AppBackupHelper(this)
+        privilegedHelper = PrivilegedBackupHelper(this)
 
         syncEngine = SyncEngine(
             context = this,
@@ -68,7 +71,8 @@ class StarCloudApp : Application() {
             contactsHelper = contactsHelper,
             smsHelper = smsHelper,
             waHelper = waHelper,
-            appHelper = appHelper
+            appHelper = appHelper,
+            privilegedHelper = privilegedHelper
         )
     }
 }

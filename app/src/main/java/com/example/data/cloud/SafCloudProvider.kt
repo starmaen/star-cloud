@@ -38,8 +38,15 @@ class SafCloudProvider(
         private set
 
     override suspend fun connect(accountEmail: String?): Boolean = withContext(Dispatchers.IO) {
-        val dir = root
-        isConnected = dir != null && dir.exists() && dir.canWrite()
+        val dir = root ?: return@withContext false
+        val exists = runCatching { dir.exists() }.getOrDefault(true)
+        val persistedWrite = runCatching {
+            context.contentResolver.persistedUriPermissions.any {
+                it.isWritePermission && it.uri.toString() == treeUri.toString()
+            }
+        }.getOrDefault(false)
+        val writable = runCatching { dir.canWrite() }.getOrDefault(false)
+        isConnected = exists && (persistedWrite || writable)
         isConnected
     }
 

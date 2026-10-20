@@ -52,29 +52,15 @@ class AppBackupHelper(private val context: Context) {
             }
         }
 
-        if (installedList.isEmpty()) {
-            installedList.addAll(
-                listOf(
-                    InstalledAppItem("com.whatsapp", "WhatsApp Messenger", "2.24.8.85", 48L * 1024 * 1024, "/data/app/wa.apk", false, true),
-                    InstalledAppItem("org.telegram.messenger", "Telegram", "10.9.1", 62L * 1024 * 1024, "/data/app/tg.apk", false, true),
-                    InstalledAppItem("com.google.android.apps.docs", "Google Drive", "2.24.12", 35L * 1024 * 1024, "/data/app/drive.apk", false, false)
-                )
-            )
-        }
-
         installedList.sortedBy { it.appName.lowercase() }
     }
 
     suspend fun extractApk(appItem: InstalledAppItem): File? = withContext(Dispatchers.IO) {
         runCatching {
             val sourceFile = File(appItem.sourceDir)
-            if (!sourceFile.exists()) {
-                val dest = File(context.cacheDir, "${appItem.packageName}_v${appItem.versionName}.apk")
-                dest.writeText("Simulated APK content for ${appItem.appName}")
-                return@withContext dest
-            }
+            if (!sourceFile.exists() || !sourceFile.isFile) return@runCatching null
 
-            val destFile = File(context.cacheDir, "${appItem.appName.replace(" ", "_")}_v${appItem.versionName}.apk")
+            val destFile = File(context.cacheDir, "${appItem.appName.replace(" ", "_")}.apk")
             FileInputStream(sourceFile).use { input ->
                 FileOutputStream(destFile).use { output ->
                     input.copyTo(output)
@@ -83,6 +69,19 @@ class AppBackupHelper(private val context: Context) {
             destFile
         }.getOrNull()
     }
+
+    /** The APK of Star Cloud itself, included in every backup like Swift Backup does. */
+    fun ownApkFile(): File? = runCatching {
+        val info = context.packageManager.getPackageInfo(context.packageName, 0)
+        val source = info.applicationInfo?.sourceDir ?: return@runCatching null
+        val sourceFile = File(source)
+        if (!sourceFile.exists()) return@runCatching null
+        val destFile = File(context.cacheDir, "Star_Cloud_latest.apk")
+        FileInputStream(sourceFile).use { input ->
+            FileOutputStream(destFile).use { output -> input.copyTo(output) }
+        }
+        destFile
+    }.getOrNull()
 
     fun getInstallApkIntent(apkFile: File): Intent {
         val uri: Uri = FileProvider.getUriForFile(

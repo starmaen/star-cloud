@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import com.example.ui.ScreenTab
 import com.example.ui.StarCloudViewModel
 import com.example.ui.screens.DashboardScreen
+import com.example.ui.screens.RestoreScreen
 import com.example.ui.screens.SelectiveSyncScreen
 import com.example.ui.screens.SettingsScreen
 import com.example.ui.screens.SyncActivityScreen
@@ -97,6 +98,13 @@ class MainActivity : ComponentActivity() {
                         testTag = "nav_sync_logs"
                     ),
                     NavigationTabItem(
+                        tab = ScreenTab.RESTORE,
+                        titleAr = "الاسترجاع",
+                        selectedIcon = Icons.Filled.Restore,
+                        unselectedIcon = Icons.Outlined.Restore,
+                        testTag = "nav_restore"
+                    ),
+                    NavigationTabItem(
                         tab = ScreenTab.SETTINGS,
                         titleAr = "الإعدادات",
                         selectedIcon = Icons.Filled.Settings,
@@ -151,6 +159,7 @@ class MainActivity : ComponentActivity() {
                                 ScreenTab.DASHBOARD -> DashboardScreen(viewModel = viewModel)
                                 ScreenTab.SELECTIVE_SYNC -> SelectiveSyncScreen(viewModel = viewModel)
                                 ScreenTab.SYNC_LOGS -> SyncActivityScreen(viewModel = viewModel)
+                                ScreenTab.RESTORE -> RestoreScreen(viewModel = viewModel)
                                 ScreenTab.SETTINGS -> SettingsScreen(viewModel = viewModel)
                             }
                         }

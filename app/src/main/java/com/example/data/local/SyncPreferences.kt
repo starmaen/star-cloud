@@ -65,6 +65,9 @@ class SyncPreferences(context: Context) {
     private val _maxFileSizeMb = MutableStateFlow(prefs.getInt(KEY_MAX_FILE_SIZE, 100))
     val maxFileSizeMb: StateFlow<Int> = _maxFileSizeMb
 
+    private val _fullAppData = MutableStateFlow(isFullAppDataEnabled())
+    val fullAppData: StateFlow<Boolean> = _fullAppData
+
     fun setSyncDirection(direction: SyncDirection) {
         prefs.edit().putString(KEY_SYNC_DIRECTION, direction.name).apply()
         _syncDirection.value = direction
@@ -192,6 +195,13 @@ class SyncPreferences(context: Context) {
 
     fun getMaxFileSizeMb(): Int = prefs.getInt(KEY_MAX_FILE_SIZE, 100)
 
+    fun setFullAppData(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_FULL_APP_DATA, enabled).apply()
+        _fullAppData.value = enabled
+    }
+
+    fun isFullAppDataEnabled(): Boolean = prefs.getBoolean(KEY_FULL_APP_DATA, false)
+
     companion object {
         private const val KEY_SYNC_DIRECTION = "pref_sync_direction"
         private const val KEY_CONFLICT_POLICY = "pref_conflict_policy"
@@ -206,5 +216,6 @@ class SyncPreferences(context: Context) {
         private const val KEY_MAX_FILE_SIZE = "pref_max_file_size"
         private const val KEY_GOOGLE_MODE = "pref_google_drive_mode"
         private const val KEY_GOOGLE_EMAIL = "pref_google_email"
+        private const val KEY_FULL_APP_DATA = "pref_full_app_data"
     }
 }

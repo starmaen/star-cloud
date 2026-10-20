@@ -41,6 +41,8 @@ fun SettingsScreen(
     val destinationReady by viewModel.destinationReady.collectAsState()
     val googleEmail by viewModel.googleEmail.collectAsState()
     val googleDriveMode by viewModel.googleDriveMode.collectAsState()
+    val fullAppData by viewModel.fullAppData.collectAsState()
+    val privilegeStatus by viewModel.privilegeStatus.collectAsState()
 
     val googleSignInLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
@@ -349,6 +351,74 @@ fun SettingsScreen(
                         Switch(
                             checked = requireCharging,
                             onCheckedChange = { viewModel.setRequireCharging(it) }
+                        )
+                    }
+                }
+            }
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Security, contentDescription = null, tint = StarBluePrimary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "نسخ بيانات التطبيقات الكامل (Root / Shizuku)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = privilegeStatus,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "ينسخ هذا الخيار بيانات التطبيقات المحمية (/data/user/0) التي لا يستطيع التطبيق العادي قراءتها. اختر التطبيقات من شاشة «الانتقائية».",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { viewModel.requestShizukuPermission() },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("طلب صلاحية Shizuku")
+                        }
+                        TextButton(onClick = { viewModel.refreshPrivilegeStatus() }) {
+                            Text("تحديث الحالة")
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "تضمين بيانات التطبيقات في النسخة الاحتياطية",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                "تُستبدل النسخة السابقة ولا تتراكم",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = fullAppData,
+                            onCheckedChange = { viewModel.setFullAppData(it) }
                         )
                     }
                 }

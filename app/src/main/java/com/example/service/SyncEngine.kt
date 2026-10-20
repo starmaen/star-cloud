@@ -3,7 +3,9 @@ package com.example.service
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import androidx.documentfile.provider.DocumentFile
 import com.example.data.cloud.CloudStorageProvider
+import com.example.data.cloud.RemoteFileMetadata
 import com.example.data.local.FolderConfigEntity
 import com.example.data.local.StarCloudDatabase
 import com.example.data.local.SyncLogEntity
@@ -27,6 +29,8 @@ import java.io.FileInputStream
 import org.json.JSONArray
 import org.json.JSONObject
 
+private const val MAX_RESTORE_BYTES = 200L * 1024L * 1024L
+
 class SyncEngine(
     private val context: Context,
     private val database: StarCloudDatabase,
@@ -34,7 +38,8 @@ class SyncEngine(
     private val contactsHelper: ContactsBackupHelper,
     private val smsHelper: SmsCallLogBackupHelper,
     private val waHelper: WhatsAppBackupHelper,
-    private val appHelper: AppBackupHelper
+    private val appHelper: AppBackupHelper,
+    private val privilegedHelper: PrivilegedBackupHelper
 ) {
     private val _progressState = MutableStateFlow(SyncProgressState())
     val progressState: StateFlow<SyncProgressState> = _progressState.asStateFlow()
@@ -79,6 +84,59 @@ class SyncEngine(
 
             val maxFileSizeMb = preferences.getMaxFileSizeMb()
             val maxSizeBytes = if (maxFileSizeMb > 0) maxFileSizeMb.toLong() * 1024 * 1024 else Long.MAX_VALUE
+
+            // Always materialise the destination folder with a manifest. This
+            // guarantees that "Star Cloud" really exists on the remote side
+            // even when no category/folder has been selected yet, and proves
+            // that the destination is genuinely writable.
+            val manifestBytes = JSONObject().apply {
+                put("app", "Star Cloud")
+                put("version", "1.2.0")
+                put("startedAt", startTime)
+                put("account", preferences.getConnectedAccount())
+            }.toString().toByteArray(Charsets.UTF_8)
+            val manifestRes = provider.uploadFile(
+                remotePath = "",
+                fileName = "starcloud_manifest.json",
+                fileSize = manifestBytes.size.toLong(),
+                inputStream = ByteArrayInputStream(manifestBytes),
+                mimeType = "application/json",
+                onProgress = { _, _ -> }
+            )
+            if (manifestRes.isSuccess) {
+                totalProcessed++
+                totalBytesTransferred += manifestRes.getOrNull()?.sizeBytes ?: manifestBytes.size.toLong()
+            } else {
+                hasError = true
+                errorReason = manifestRes.exceptionOrNull()?.message ?: "تعذر إنشاء مجلد Star Cloud على الوجهة"
+            }
+
+            // 0b. Self APK backup, like Swift Backup, so the app can be
+            // restored from the destination even if it is uninstalled.
+            appHelper.ownApkFile()?.let { apkFile ->
+                _progressState.value = _progressState.value.copy(
+                    currentItemName = apkFile.name,
+                    stage = "رفع نسخة APK للتطبيق...",
+                    currentProgress = 0.08f
+                )
+                val apkRes = FileInputStream(apkFile).use { stream ->
+                    provider.uploadFile(
+                        remotePath = "",
+                        fileName = apkFile.name,
+                        fileSize = apkFile.length(),
+                        inputStream = stream,
+                        mimeType = "application/vnd.android.package-archive",
+                        onProgress = { _, _ -> }
+                    )
+                }
+                if (apkRes.isSuccess) {
+                    totalProcessed++
+                    totalBytesTransferred += apkRes.getOrNull()?.sizeBytes ?: apkFile.length()
+                } else {
+                    hasError = true
+                    errorReason = apkRes.exceptionOrNull()?.message ?: "فشل رفع نسخة APK للتطبيق"
+                }
+            }
 
             // 1. Folders
             val activeFolders = folderConfigs.filter { it.isEnabled }
@@ -366,6 +424,42 @@ class SyncEngine(
                             errorReason = apkRes.exceptionOrNull()?.message ?: "فشل رفع ${app.appName}"
                         }
                     }
+
+                    if (preferences.isFullAppDataEnabled() && !isCancelled) {
+                        _progressState.value = _progressState.value.copy(
+                            currentItemName = "${app.appName} (data)",
+                            stage = "نسخ بيانات ${app.appName} كاملة...",
+                            currentProgress = 0.90f
+                        )
+                        val dataFile = File(context.cacheDir, "data_${app.packageName}.tar.gz")
+                        val dataRes = privilegedHelper.backupAppData(app, dataFile)
+                        dataRes.onSuccess {
+                            if (dataFile.exists() && dataFile.length() > 0) {
+                                val upload = FileInputStream(dataFile).use { stream ->
+                                    provider.uploadFile(
+                                        remotePath = "Applications/${app.packageName}",
+                                        fileName = "data.tar.gz",
+                                        fileSize = dataFile.length(),
+                                        inputStream = stream,
+                                        mimeType = "application/gzip",
+                                        onProgress = { _, _ -> }
+                                    )
+                                }
+                                if (upload.isSuccess) {
+                                    totalProcessed++
+                                    totalBytesTransferred += dataFile.length()
+                                } else {
+                                    hasError = true
+                                    errorReason = upload.exceptionOrNull()?.message
+                                        ?: "فشل رفع بيانات ${app.appName}"
+                                }
+                            }
+                        }.onFailure {
+                            hasError = true
+                            errorReason = it.message ?: "تعذّر نسخ بيانات ${app.appName}"
+                        }
+                        runCatching { dataFile.delete() }
+                    }
                 }
             }
 
@@ -413,6 +507,50 @@ class SyncEngine(
         }
 
         return@withContext !hasError && !isCancelled
+    }
+
+    suspend fun listRestorableBackups(provider: CloudStorageProvider): List<RemoteFileMetadata> =
+        withContext(Dispatchers.IO) {
+            val folders = listOf("", "Contacts", "Messages", "WhatsApp", "Applications", "Folders")
+            val result = mutableListOf<RemoteFileMetadata>()
+            for (folder in folders) {
+                val files = runCatching { provider.listFiles(folder) }.getOrDefault(emptyList())
+                for (file in files) {
+                    if (file.isDirectory) continue
+                    val label = if (folder.isBlank()) file.name else "$folder/${file.name}"
+                    result += file.copy(name = label)
+                }
+            }
+            result.distinctBy { it.fileId }
+        }
+
+    suspend fun restoreBackups(
+        provider: CloudStorageProvider,
+        entries: List<RemoteFileMetadata>,
+        targetTreeUri: Uri
+    ): Int = withContext(Dispatchers.IO) {
+        val targetDir = DocumentFile.fromTreeUri(context, targetTreeUri)
+            ?: return@withContext 0
+        var restored = 0
+        for (entry in entries) {
+            if (entry.isDirectory) continue
+            if (entry.sizeBytes > MAX_RESTORE_BYTES) continue
+            provider.downloadFile(entry.fileId) { _, _ -> }.onSuccess { bytes ->
+                val fileName = entry.name.substringAfterLast('/').ifBlank { "backup.bin" }
+                runCatching {
+                    targetDir.findFile(fileName)?.delete()
+                    val created = targetDir.createFile(
+                        entry.mimeType.ifBlank { "application/octet-stream" },
+                        fileName
+                    )
+                    if (created != null) {
+                        context.contentResolver.openOutputStream(created.uri)?.use { it.write(bytes) }
+                        restored++
+                    }
+                }
+            }
+        }
+        restored
     }
 
     private fun formatBytes(bytes: Long): String {

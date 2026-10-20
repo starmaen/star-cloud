@@ -63,17 +63,6 @@ class SmsCallLogBackupHelper(private val context: Context) {
             }
         }
 
-        if (list.isEmpty()) {
-            val now = System.currentTimeMillis()
-            list.addAll(
-                listOf(
-                    SmsLogItem("s1", "StarCloud-Alert", "تم تفعيل حماية النسخ السحابي لجهازك بنجاح.", now - 3600000, 1),
-                    SmsLogItem("s2", "+963944111222", "مرحبًا، يرجى تأكيد استلام ملفات النسخة الاحتياطية.", now - 7200000, 1),
-                    SmsLogItem("s3", "BankSyria", "رمز التحقق السحابي OTP الخاص بك هو: 849201", now - 86400000, 1),
-                    SmsLogItem("s4", "GoogleDrive", "تم ربط حسابك في Star Cloud بنجاح بنطاق drive.file", now - 172800000, 1)
-                )
-            )
-        }
         list
     }
 
@@ -120,16 +109,6 @@ class SmsCallLogBackupHelper(private val context: Context) {
             }
         }
 
-        if (list.isEmpty()) {
-            val now = System.currentTimeMillis()
-            list.addAll(
-                listOf(
-                    CallLogItem("c1", "+963 944 000 111", "الدعم الفني - Star Cloud", now - 1800000, 145, CallLog.Calls.INCOMING_TYPE),
-                    CallLogItem("c2", "+963 11 333 4444", "الفرع الرئيسي دمشق", now - 5400000, 310, CallLog.Calls.OUTGOING_TYPE),
-                    CallLogItem("c3", "+963 933 222 333", "فريق المزامنة السحابية", now - 86400000, 0, CallLog.Calls.MISSED_TYPE)
-                )
-            )
-        }
         list
     }
 

@@ -20,6 +20,7 @@ import com.example.data.model.CallLogItem
 import com.example.data.model.SyncDirection
 import com.example.data.model.SyncProgressState
 import com.example.data.model.WhatsAppMediaCategory
+import com.example.service.PrivilegeMode
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInStatusCodes
 import com.google.android.gms.common.api.ApiException
@@ -39,6 +40,7 @@ enum class ScreenTab {
     DASHBOARD,
     SELECTIVE_SYNC,
     SYNC_LOGS,
+    RESTORE,
     SETTINGS
 }
 
@@ -57,6 +59,12 @@ data class DeviceStorageInfo(
     val internal: StorageVolumeInfo? = null,
     val appUsedBytes: Long = 0L,
     val externalVolumes: List<StorageVolumeInfo> = emptyList()
+)
+
+data class RestorableBackup(
+    val entry: com.example.data.cloud.RemoteFileMetadata,
+    val displayName: String,
+    val group: String
 )
 
 class StarCloudViewModel(application: Application) : AndroidViewModel(application) {
@@ -99,6 +107,7 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     val syncCallsPref = preferences.syncCalls
     val syncWhatsAppPref = preferences.syncWhatsApp
     val syncAppsPref = preferences.syncApps
+    val fullAppData = preferences.fullAppData
 
     val folderConfigs: StateFlow<List<FolderConfigEntity>> = database.syncDao()
         .getAllFolderConfigs()
@@ -123,6 +132,9 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     private val _installedApps = MutableStateFlow<List<InstalledAppItem>>(emptyList())
     val installedApps: StateFlow<List<InstalledAppItem>> = _installedApps.asStateFlow()
 
+    private val _includeSystemApps = MutableStateFlow(false)
+    val includeSystemApps: StateFlow<Boolean> = _includeSystemApps.asStateFlow()
+
     private val _appSearchQuery = MutableStateFlow("")
     val appSearchQuery: StateFlow<String> = _appSearchQuery.asStateFlow()
 
@@ -134,9 +146,41 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
+    private val _restoreEntries = MutableStateFlow<List<RestorableBackup>>(emptyList())
+    val restoreEntries: StateFlow<List<RestorableBackup>> = _restoreEntries.asStateFlow()
+
+    private val _restoreSelected = MutableStateFlow<Set<String>>(emptySet())
+    val restoreSelected: StateFlow<Set<String>> = _restoreSelected.asStateFlow()
+
+    private val _restoreLoading = MutableStateFlow(false)
+    val restoreLoading: StateFlow<Boolean> = _restoreLoading.asStateFlow()
+
+    private val _privilegeStatus = MutableStateFlow("جارٍ الفحص...")
+    val privilegeStatus: StateFlow<String> = _privilegeStatus.asStateFlow()
+
     init {
         refreshStorageInfo()
         loadSelectiveData()
+        refreshPrivilegeStatus()
+    }
+
+    fun refreshPrivilegeStatus() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _privilegeStatus.value = app.privilegedHelper.statusText()
+        }
+    }
+
+    fun setFullAppData(enabled: Boolean) {
+        preferences.setFullAppData(enabled)
+        if (enabled && app.privilegedHelper.mode() == PrivilegeMode.NONE) {
+            _userMessage.value =
+                "النسخ الكامل يحتاج Root أو صلاحية Shizuku. امنح Root أو اضغط «طلب صلاحية Shizuku»."
+        }
+    }
+
+    fun requestShizukuPermission() {
+        app.privilegedHelper.requestShizukuPermission()
+        _userMessage.value = "وافق على طلب Shizuku ثم اضغط «تحديث الحالة»."
     }
 
     fun selectTab(tab: ScreenTab) {
@@ -163,8 +207,12 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
 
     private fun readDeviceStorage(): DeviceStorageInfo {
         val internal = runCatching {
-            val internalPath = Environment.getDataDirectory().path.takeIf { it.isNotBlank() }
-                ?: runCatching { Environment.getExternalStorageDirectory().path }.getOrNull()
+            // Use the shared internal volume (/storage/emulated/0) so the
+            // numbers match what the system file manager reports. /data is the
+            // raw partition and shows a slightly different capacity.
+            val internalPath = runCatching { Environment.getExternalStorageDirectory().path }
+                .getOrNull()?.takeIf { it.isNotBlank() }
+                ?: Environment.getDataDirectory().path.takeIf { it.isNotBlank() }
                 ?: return@runCatching null
             val stat = StatFs(internalPath)
             val total = stat.blockCountLong * stat.blockSizeLong
@@ -280,6 +328,20 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
         _installedApps.value = _installedApps.value.map { it.copy(isSelected = select) }
     }
 
+    fun setIncludeSystemApps(enabled: Boolean) {
+        _includeSystemApps.value = enabled
+        viewModelScope.launch {
+            runCatching {
+                _installedApps.value = app.appHelper.getInstalledApps(includeSystemApps = enabled)
+            }
+            _userMessage.value = if (enabled) {
+                "تم عرض تطبيقات المستخدم وتطبيقات النظام"
+            } else {
+                "تم عرض تطبيقات المستخدم فقط"
+            }
+        }
+    }
+
     fun setAppSearchQuery(query: String) {
         _appSearchQuery.value = query
     }
@@ -369,6 +431,55 @@ class StarCloudViewModel(application: Application) : AndroidViewModel(applicatio
                 "تمت المزامنة إلى $destination. تجد الملفات داخل مجلد Star Cloud."
             } else {
                 "حدث خطأ أثناء المزامنة، راجع سجل العمليات"
+            }
+        }
+    }
+
+    fun loadRestoreEntries() {
+        viewModelScope.launch {
+            _restoreLoading.value = true
+            val provider = cloudRegistry.getRemoteProvider()
+            val list = runCatching { syncEngine.listRestorableBackups(provider) }.getOrDefault(emptyList())
+            _restoreEntries.value = list.map { entry ->
+                val group = entry.name.substringBefore('/', "").ifBlank { "ملفات النسخة" }
+                RestorableBackup(entry = entry, displayName = entry.name, group = group)
+            }
+            _restoreSelected.value = emptySet()
+            _restoreLoading.value = false
+            _userMessage.value = if (list.isEmpty()) {
+                "لا توجد نسخ احتياطية على الوجهة الحالية. نفّذ نسخة احتياطية أولاً."
+            } else {
+                "تم العثور على ${list.size} عنصراً قابلاً للاسترجاع"
+            }
+        }
+    }
+
+    fun toggleRestoreEntry(fileId: String) {
+        val current = _restoreSelected.value
+        _restoreSelected.value = if (fileId in current) current - fileId else current + fileId
+    }
+
+    fun selectAllRestore(selected: Boolean) {
+        _restoreSelected.value =
+            if (selected) _restoreEntries.value.map { it.entry.fileId }.toSet() else emptySet()
+    }
+
+    fun restoreSelectedEntries(targetTreeUri: Uri) {
+        val selectedIds = _restoreSelected.value
+        if (selectedIds.isEmpty()) {
+            _userMessage.value = "حدّد عنصراً واحداً على الأقل للاسترجاع"
+            return
+        }
+        val entries = _restoreEntries.value.filter { it.entry.fileId in selectedIds }.map { it.entry }
+        viewModelScope.launch {
+            val provider = cloudRegistry.getRemoteProvider()
+            val count = runCatching {
+                syncEngine.restoreBackups(provider, entries, targetTreeUri)
+            }.getOrDefault(0)
+            _userMessage.value = if (count > 0) {
+                "تم استرجاع $count ملف إلى المجلد المختار"
+            } else {
+                "تعذّر الاسترجاع. تحقق من الصلاحيات وحجم الملفات (الحد 200MB للملف)."
             }
         }
     }

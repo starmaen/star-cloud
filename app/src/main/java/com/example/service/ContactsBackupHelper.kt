@@ -57,17 +57,7 @@ class ContactsBackupHelper(private val context: Context) {
             }
         }
 
-        if (list.isEmpty()) {
-            list.addAll(
-                listOf(
-                    ContactItem("1", "فريق الدعم الفني - Star Cloud", "+963 944 000 111", "starsyria2500@gmail.com", true),
-                    ContactItem("2", "المهندس المشرف - سوريا", "+963 933 222 333", "engineer@starcloud.sy", true),
-                    ContactItem("3", "مكتب دمشق الرئيسي", "+963 11 333 4444", "damascus@starcloud.sy", true),
-                    ContactItem("4", "مركز مزامنة السحابة الدولي", "+1 800 555 0199", "sync@starcloud.com", true)
-                )
-            )
-        }
-        list
+        list.sortedBy { it.name.lowercase() }
     }
 
     fun exportToVCard(contacts: List<ContactItem>): String {

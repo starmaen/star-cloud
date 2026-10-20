@@ -59,6 +59,7 @@ fun SelectiveSyncScreen(
     val callLogs by viewModel.callLogs.collectAsState()
     val waCategories by viewModel.whatsAppCategories.collectAsState()
     val apps by viewModel.installedApps.collectAsState()
+    val includeSystemApps by viewModel.includeSystemApps.collectAsState()
     val appSearchQuery by viewModel.appSearchQuery.collectAsState()
     val maxFileSizeMb by viewModel.maxFileSizeMb.collectAsState()
     val conflictPolicy by viewModel.conflictPolicy.collectAsState()
@@ -146,6 +147,8 @@ fun SelectiveSyncScreen(
                 AppsSubTab(
                     apps = apps,
                     searchQuery = appSearchQuery,
+                    includeSystemApps = includeSystemApps,
+                    onIncludeSystemChange = { viewModel.setIncludeSystemApps(it) },
                     onSearchQueryChange = { viewModel.setAppSearchQuery(it) },
                     onToggleApp = { viewModel.toggleInstalledApp(it) },
                     onSelectAll = { viewModel.selectAllApps(it) }
@@ -632,6 +635,8 @@ private fun WhatsAppSubTab(
 private fun AppsSubTab(
     apps: List<InstalledAppItem>,
     searchQuery: String,
+    includeSystemApps: Boolean,
+    onIncludeSystemChange: (Boolean) -> Unit,
     onSearchQueryChange: (String) -> Unit,
     onToggleApp: (String) -> Unit,
     onSelectAll: (Boolean) -> Unit
@@ -676,6 +681,39 @@ private fun AppsSubTab(
                 shape = RoundedCornerShape(14.dp),
                 singleLine = true
             )
+        }
+
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 14.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "إظهار تطبيقات النظام",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            "يعرض تطبيقات النظام إلى جانب تطبيقات المستخدم لاختيار ما تريد نسخه أو استرجاعه",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Switch(
+                        checked = includeSystemApps,
+                        onCheckedChange = onIncludeSystemChange
+                    )
+                }
+            }
         }
 
         items(filtered) { app ->
