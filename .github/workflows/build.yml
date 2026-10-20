@@ -30,16 +30,12 @@ jobs:
           sdkmanager "platforms;android-36.1" || sdkmanager "platforms;android-36" || true
           sdkmanager "build-tools;36.1.0" || sdkmanager "build-tools;36.0.0" || true
 
-      - name: Prepare signing key and env
-        run: |
-          touch .env
-
       - name: Print signing fingerprints
         run: |
           keytool -list -v -keystore keystore.jks -storepass "AlMustasharStore2026" -alias al-mustashar | grep -E "SHA1:|SHA256:" || true
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: ./gradlew assembleDebug testDebugUnitTest --stacktrace --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -52,7 +48,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release view latest >/dev/null 2>&1 || gh release create latest --title "Star Cloud - latest build" --notes "أحدث نسخة من Star Cloud. المزامنة الحقيقية عبر Google Drive أو مجلد SAF أو مساحة التطبيق الداخلية." || true
+          gh release view latest >/dev/null 2>&1 || gh release create latest --title "Star Cloud - latest build" --notes "أحدث نسخة من Star Cloud: نسخ احتياطي واستعادة للتطبيقات والملفات وجهات الاتصال والرسائل، إلى مجلد أو Google Drive أو WebDAV." || true
           gh release view latest >/dev/null 2>&1 || { echo "Release 'latest' غير متاح"; exit 1; }
           gh release delete-asset latest Star_Cloud.apk -y >/dev/null 2>&1 || true
           gh release delete-asset latest app-debug.apk -y >/dev/null 2>&1 || true
