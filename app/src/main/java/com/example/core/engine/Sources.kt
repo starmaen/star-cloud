@@ -96,6 +96,33 @@ object Sources {
         count
     }
 
+    /** قائمة مقروءة (CSV بترميز UTF-8 تُفتح في Excel وغيره): الاسم، الأرقام، البريد. */
+    suspend fun exportContactsCsv(context: Context, out: File): Int = withContext(Dispatchers.IO) {
+        val names = LinkedHashMap<Long, String>()
+        val phones = HashMap<Long, MutableList<String>>()
+        val mails = HashMap<Long, MutableList<String>>()
+        context.contentResolver.query(ContactsContract.Contacts.CONTENT_URI,
+            arrayOf(ContactsContract.Contacts._ID, ContactsContract.Contacts.DISPLAY_NAME), null, null, "display_name COLLATE LOCALIZED ASC")?.use { c ->
+            while (c.moveToNext()) names[c.getLong(0)] = c.getString(1) ?: ""
+        }
+        context.contentResolver.query(ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Phone.CONTACT_ID, ContactsContract.CommonDataKinds.Phone.NUMBER), null, null, null)?.use { c ->
+            while (c.moveToNext()) phones.getOrPut(c.getLong(0)) { ArrayList() }.add(c.getString(1) ?: "")
+        }
+        context.contentResolver.query(ContactsContract.CommonDataKinds.Email.CONTENT_URI,
+            arrayOf(ContactsContract.CommonDataKinds.Email.CONTACT_ID, ContactsContract.CommonDataKinds.Email.ADDRESS), null, null, null)?.use { c ->
+            while (c.moveToNext()) mails.getOrPut(c.getLong(0)) { ArrayList() }.add(c.getString(1) ?: "")
+        }
+        fun q(x: String) = "\"" + x.replace("\"", "\"\"") + "\""
+        out.bufferedWriter(Charsets.UTF_8).use { w ->
+            w.write("\uFEFF"); w.write("الاسم,الأرقام,البريد\r\n")
+            names.forEach { (id, n) ->
+                w.write(q(n) + "," + q((phones[id] ?: emptyList<String>()).distinct().joinToString(" | ")) + "," + q((mails[id] ?: emptyList<String>()).distinct().joinToString(" | ")) + "\r\n")
+            }
+        }
+        names.size
+    }
+
     // ---------- الرسائل ----------
     suspend fun exportSms(context: Context, out: File): Int = withContext(Dispatchers.IO) {
         var n = 0

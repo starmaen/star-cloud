@@ -217,6 +217,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         return RestorePlan(
             destId = dest.id, device = dev,
             apps = rSelApps.map { it.key to it.value },
+            appDirs = rApps.associate { it.pkg to it.dir },
             nodes = rNodes,
             contactsFile = if (rWantContacts) rContacts.firstOrNull()?.name else null,
             smsFile = if (rWantSms) rSms.firstOrNull()?.name else null,

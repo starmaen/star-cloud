@@ -24,6 +24,9 @@ class SafDestination(
         val dups = ArrayList<String>()
     }
 
+    /** true لمزوّدي السحابة (Drive وغيره): يخزّنون الملف محلياً في هاتفك حتى يكتمل رفعه. */
+    val isCloud: Boolean get() = tree.authority != "com.android.externalstorage.documents"
+
     private val resolver get() = context.contentResolver
     private val rootDocId: String = DocumentsContract.getTreeDocumentId(tree)
     private val childCache = HashMap<String, MutableMap<String, Node>>()

@@ -10,6 +10,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlin.math.max
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -101,6 +102,7 @@ class BackupEngine(
             val tmp = File(context.cacheDir, "run").apply { deleteRecursively(); mkdirs() }
             val stamp = Layout.stamp()
             if (sel.contacts) versioned(runs, base, Layout.CONTACTS, "contacts", "vcf", tmp, stamp, "جهات الاتصال") { f -> Sources.exportContacts(context, f) }
+            if (sel.contacts) versioned(runs, base, Layout.CONTACTS, "contactlist", "csv", tmp, stamp, "قائمة جهات الاتصال (قابلة للقراءة)") { f -> Sources.exportContactsCsv(context, f) }
             if (sel.sms) versioned(runs, base, Layout.MESSAGES, "sms", "json", tmp, stamp, "الرسائل") { f -> Sources.exportSms(context, f) }
             if (sel.calls) versioned(runs, base, Layout.MESSAGES, "calls", "json", tmp, stamp, "سجل المكالمات") { f -> Sources.exportCalls(context, f) }
 
@@ -148,11 +150,13 @@ class BackupEngine(
             }
             ok = errs == 0
         } catch (e: CancellationException) {
+            runCatching { File(context.cacheDir, "run").deleteRecursively() }
             summary = "أُوقفت النسخ يدوياً"
             tracker.finish(summary)
             logRun(started, false, summary)
             throw e
         } catch (e: Exception) {
+            runCatching { File(context.cacheDir, "run").deleteRecursively() }
             summary = e.message ?: "فشل غير معروف"
             tracker.error(summary)
             ok = false
@@ -201,6 +205,7 @@ class BackupEngine(
     // ---------------- رفع ----------------
     private suspend fun uploadFile(r: DestRun, dir: List<String>, name: String, file: File, countBytes: Boolean = true): Boolean {
         var lastErr: Exception? = null
+        if ((r.dest as? SafDestination)?.isCloud == true && !waitForSpace(r)) return false
         for (attempt in 1..2) {
             currentCoroutineContext().ensureActive()
             var sent = 0L
@@ -235,6 +240,30 @@ class BackupEngine(
         val names = r.listCache[key] ?: return true // تعذّر الفحص: نثق بالفهرس
         val remoteSize = names[name] ?: return false
         return remoteSize <= 0 || remoteSize == size
+    }
+
+    /**
+     * تطبيقات السحابة (Drive) تحتفظ بنسخة محلية من كل ملف حتى يكتمل رفعه، فتتناقص مساحة الهاتف.
+     * إذا انخفضت المساحة الحرة نتوقف مؤقتاً حتى يفرغ طابور الرفع ثم نكمل.
+     */
+    private suspend fun waitForSpace(r: DestRun): Boolean {
+        fun low(): Boolean {
+            val q = runCatching { DeviceStorage.read(context) }.getOrNull() ?: return false
+            val min = max(1_500_000_000L, (q.total ?: 0L) / 10)
+            return (q.free ?: Long.MAX_VALUE) < min
+        }
+        var waits = 0
+        while (low()) {
+            if (waits >= 40) {
+                tracker.error("مساحة الهاتف الداخلية منخفضة ولم يفرغ طابور الرفع في «${r.dest.label}». أُوقف الرفع إليها لحماية هاتفك؛ أفرغ ذاكرة Drive (الإعدادات ← التطبيقات ← Drive ← مسح الذاكرة المؤقتة) ثم أعد المحاولة.")
+                r.dead = true
+                return false
+            }
+            tracker.phase("بانتظار أن يُنهي تطبيق السحابة رفع ملفاته لتحرير مساحة…")
+            delay(15_000); waits++
+            currentCoroutineContext().ensureActive()
+        }
+        return true
     }
 
     private suspend fun flush(r: DestRun) {
@@ -276,10 +305,18 @@ class BackupEngine(
     ) {
         val mode = if (apps.any { it.second.withData }) Privileged.detect() else PrivMode.NONE
         var warnedData = false
+        // اسم مجلد التطبيق على الوجهة = اسمه الحقيقي (وليس اسم الحزمة)، ويُضاف الاسم التقني فقط عند تطابق اسمين
+        fun clean(l: String) = l.replace(Regex("[\\\\/:*?\"<>|]"), " ").replace(Regex("\\s+"), " ").trim().take(60)
+        val dupLabels = apps.groupBy { clean(it.first.label).lowercase() }.filter { it.value.size > 1 }.keys
+        fun dirNameOf(a: AppItem): String {
+            val c = clean(a.label)
+            return if (c.isBlank()) a.pkg else if (c.lowercase() in dupLabels) "$c (${a.pkg})" else c
+        }
         for ((app, choice) in apps) {
             currentCoroutineContext().ensureActive()
             tracker.phase("نسخ التطبيقات", app.label)
-            val dir = base + Layout.APPS + app.pkg
+            val dirName = dirNameOf(app)
+            val dir = base + Layout.APPS + dirName
             if (app.apkFiles.isEmpty()) tracker.error("${app.label}: تعذّر الوصول لملف التطبيق (APK)")
             var hasData = false
             val names = ArrayList<String>()
@@ -301,7 +338,7 @@ class BackupEngine(
                 }
                 for (r in runs) {
                     if (r.dead) continue
-                    val key = Layout.APPS + "/" + app.pkg + "/" + apkOrig.name
+                    val key = Layout.APPS + "/" + dirName + "/" + apkOrig.name
                     val old = r.index[key]
                     if (old != null && old.size == apk.length() && old.modified == apk.lastModified() && remoteHas(r, dir, apkOrig.name, apk.length())) { tracker.bytes(apk.length()); continue }
                     if (uploadFile(r, dir, apkOrig.name, apk)) {
@@ -331,7 +368,7 @@ class BackupEngine(
                     finally { tar.delete() }
                 }
             }
-            val m = JSONObject().put("pkg", app.pkg).put("label", app.label).put("version", app.version)
+            val m = JSONObject().put("pkg", app.pkg).put("dir", dirName).put("label", app.label).put("version", app.version)
                 .put("hasData", hasData).put("files", JSONArray(names)).put("size", app.apkBytes)
                 .put("time", System.currentTimeMillis())
                 .put("icon", Sources.iconBase64(context, app.pkg))

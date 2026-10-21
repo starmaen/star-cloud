@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 
-data class AppMeta(val pkg: String, val label: String, val version: String, val hasData: Boolean, val size: Long, val files: List<String>, val icon: String = "")
+data class AppMeta(val pkg: String, val label: String, val version: String, val hasData: Boolean, val size: Long, val files: List<String>, val icon: String = "", val dir: String = "")
 
 /** عقدة داخل مجلد Files في النسخة: مسارها نسبي (مقاطع). */
 data class RemoteNode(val segs: List<String>, val isDir: Boolean)
@@ -26,6 +26,7 @@ data class RestorePlan(
     val contactsFile: String? = null,
     val smsFile: String? = null,
     val callsFile: String? = null,
+    val appDirs: Map<String, String> = emptyMap(),
     val toOriginal: Boolean = true,
     val overwrite: Boolean = true
 )
@@ -47,7 +48,7 @@ class Catalog(private val dest: Destination, private val device: String) {
                 AppMeta(o.getString("pkg"), o.optString("label").ifBlank { o.getString("pkg") }, o.optString("version"),
                     o.optBoolean("hasData"), o.optLong("size"),
                     o.optJSONArray("files")?.let { a -> (0 until a.length()).map { i -> a.getString(i) } } ?: emptyList(),
-                    o.optString("icon"))
+                    o.optString("icon"), o.optString("dir").ifBlank { o.getString("pkg") })
             }.sortedBy { it.label.lowercase() }
         }
     }.getOrDefault(emptyList())
@@ -85,7 +86,7 @@ class RestoreEngine(
             if (plan.contactsFile != null) restoreContacts(dest, base, plan.contactsFile)
             if (plan.smsFile != null) restoreSms(dest, base, plan.smsFile)
             if (plan.callsFile != null) restoreCalls(dest, base, plan.callsFile)
-            if (plan.apps.isNotEmpty()) restoreApps(dest, base, plan.apps)
+            if (plan.apps.isNotEmpty()) restoreApps(dest, base, plan.apps, plan.appDirs)
             for (n in plan.nodes) {
                 currentCoroutineContext().ensureActive()
                 if (n.isDir) restoreDir(dest, base, n.segs, plan) else restoreFile(dest, base, n.segs.dropLast(1), n.segs.last(), 0, 0, plan)
@@ -181,12 +182,12 @@ class RestoreEngine(
         catch (e: Exception) { tracker.error("سجل المكالمات: ${e.message}") }
     }
 
-    private suspend fun restoreApps(dest: Destination, base: List<String>, apps: List<Pair<String, Boolean>>) {
+    private suspend fun restoreApps(dest: Destination, base: List<String>, apps: List<Pair<String, Boolean>>, dirs: Map<String, String>) {
         val mode = Privileged.detect()
         for ((pkg, withData) in apps) {
             currentCoroutineContext().ensureActive()
             tracker.phase("استعادة التطبيقات", pkg)
-            val dir = base + Layout.APPS + pkg
+            val dir = base + Layout.APPS + (dirs[pkg] ?: pkg)
             val work = File(context.cacheDir, "restore_$pkg").apply { deleteRecursively(); mkdirs() }
             try {
                 if (!Sources.isInstalled(context, pkg)) {
