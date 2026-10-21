@@ -53,6 +53,7 @@ class BackupEngine(
         val pending = ArrayList<FileIndexEntity>()
         var consecutiveFailures = 0
         var dead = false
+        val listCache = HashMap<String, Map<String, Long>?>()
     }
 
     suspend fun run(): Boolean = withContext(Dispatchers.IO) {
@@ -85,7 +86,10 @@ class BackupEngine(
             // 2) مسح الملفات
             tracker.phase("فحص الملفات المختارة…")
             val files = if (sel.paths.isNotEmpty()) scan(sel.paths) else emptyList()
-            val appItems = sel.apps.mapNotNull { ch -> Sources.appItem(context, ch.pkg)?.let { it to ch } }
+            val appItems = sel.apps.mapNotNull { ch ->
+                Sources.appItem(context, ch.pkg)?.let { it to ch }
+                    ?: run { tracker.error("التطبيق ${ch.pkg} غير مثبّت أو لا يمكن قراءته"); null }
+            }
             val destCount = runs.size
             val smallItems = (if (sel.contacts) 1 else 0) + (if (sel.sms) 1 else 0) + (if (sel.calls) 1 else 0)
             tracker.totals(
@@ -115,7 +119,7 @@ class BackupEngine(
                     if (r.dead) continue
                     val key = Layout.FILES + "/" + lf.key
                     val old = r.index[key]
-                    if (old != null && old.size == lf.size && old.modified == lf.modified) { tracker.itemSkipped(lf.size); continue }
+                    if (old != null && old.size == lf.size && old.modified == lf.modified && remoteHas(r, remoteDir, lf.name, lf.size)) { tracker.itemSkipped(lf.size); continue }
                     if (uploadFile(r, remoteDir, lf.name, lf.file)) {
                         val e = FileIndexEntity(r.dest.id, key, lf.size, lf.modified)
                         r.index[key] = e; r.pending.add(e)
@@ -220,6 +224,18 @@ class BackupEngine(
         return false
     }
 
+    /** هل الملف موجود فعلاً على الوجهة؟ (يعالج حالة حذف المستخدم للنسخة من الوجهة والفهرس المحلي ما زال يظنها مرفوعة) */
+    private suspend fun remoteHas(r: DestRun, dir: List<String>, name: String, size: Long): Boolean {
+        val key = dir.joinToString("/")
+        if (!r.listCache.containsKey(key)) {
+            r.listCache[key] = try { r.dest.list(dir).filter { !it.isDir }.associate { it.name to it.size } }
+            catch (e: CancellationException) { throw e } catch (e: Exception) { null }
+        }
+        val names = r.listCache[key] ?: return true // تعذّر الفحص: نثق بالفهرس
+        val remoteSize = names[name] ?: return false
+        return remoteSize <= 0 || remoteSize == size
+    }
+
     private suspend fun flush(r: DestRun) {
         if (r.pending.isEmpty()) return
         dao.putIndex(r.pending.toList()); r.pending.clear()
@@ -263,6 +279,7 @@ class BackupEngine(
             currentCoroutineContext().ensureActive()
             tracker.phase("نسخ التطبيقات", app.label)
             val dir = base + Layout.APPS + app.pkg
+            if (app.apkFiles.isEmpty()) tracker.error("${app.label}: تعذّر الوصول لملف التطبيق (APK)")
             var hasData = false
             val names = ArrayList<String>()
             for (apk in app.apkFiles) {
@@ -271,7 +288,7 @@ class BackupEngine(
                     if (r.dead) continue
                     val key = Layout.APPS + "/" + app.pkg + "/" + apk.name
                     val old = r.index[key]
-                    if (old != null && old.size == apk.length() && old.modified == apk.lastModified()) { tracker.bytes(apk.length()); continue }
+                    if (old != null && old.size == apk.length() && old.modified == apk.lastModified() && remoteHas(r, dir, apk.name, apk.length())) { tracker.bytes(apk.length()); continue }
                     if (uploadFile(r, dir, apk.name, apk)) {
                         val e = FileIndexEntity(r.dest.id, key, apk.length(), apk.lastModified())
                         r.index[key] = e; r.pending.add(e)
