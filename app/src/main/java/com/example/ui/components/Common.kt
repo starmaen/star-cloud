@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.core.graphics.drawable.toBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.rounded.Android
 import androidx.compose.runtime.getValue
@@ -130,7 +131,7 @@ fun AppIconView(pkg: String, iconB64: String = "", size: androidx.compose.ui.uni
                     android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size).asImageBitmap()
                 } else null
             }.getOrNull() ?: runCatching {
-                androidx.core.graphics.drawable.toBitmap(ctx.packageManager.getApplicationIcon(pkg), 96, 96).asImageBitmap()
+                ctx.packageManager.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap()
             }.getOrNull()
         }
     }
