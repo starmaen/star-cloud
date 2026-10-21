@@ -123,7 +123,7 @@ fun AppsPicker(vm: AppViewModel, onBack: () -> Unit) {
                     val choice = sel[a.pkg]
                     Row(Modifier.fillMaxWidth().clickable { vm.toggleApp(a.pkg) }.padding(horizontal = 16.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically) {
-                        AppIcon(a.pkg)
+                        AppIconView(a.pkg)
                         Spacer(Modifier.width(12.dp))
                         Column(Modifier.weight(1f)) {
                             Text(a.label, fontWeight = FontWeight.Medium, maxLines = 1)
@@ -139,19 +139,6 @@ fun AppsPicker(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AppIcon(pkg: String) {
-    val ctx = LocalContext.current
-    val bmp by produceState<ImageBitmap?>(null, pkg) {
-        value = withContext(Dispatchers.IO) {
-            runCatching { ctx.packageManager.getApplicationIcon(pkg).toBitmap(96, 96).asImageBitmap() }.getOrNull()
-        }
-    }
-    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
-        bmp?.let { Image(it, null, Modifier.fillMaxSize()) } ?: Icon(Icons.Rounded.Android, null)
     }
 }
 

@@ -128,8 +128,10 @@ private fun RestoreApps(vm: AppViewModel, onBack: () -> Unit) {
             items(vm.rApps, key = { it.pkg }) { a ->
                 val chosen = a.pkg in vm.rSelApps
                 Row(Modifier.fillMaxWidth().clickable { vm.toggleRestoreApp(a.pkg) }.padding(horizontal = 16.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    AppIconView(a.pkg, a.icon)
+                    Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
-                        Text(a.label, fontWeight = FontWeight.Medium)
+                        Text(displayLabel(a), fontWeight = FontWeight.Medium)
                         Text("${a.version.ifBlank { "—" }} • ${formatBytes(a.size)}" + if (a.hasData) " • فيه بيانات" else "",
                             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (chosen && a.hasData && canData) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -169,5 +171,15 @@ private fun RestoreFiles(vm: AppViewModel, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun displayLabel(a: com.example.core.engine.AppMeta): String {
+    if (a.label != a.pkg) return a.label
+    val pm = androidx.compose.ui.platform.LocalContext.current.packageManager
+    return remember(a.pkg) {
+        runCatching { pm.getApplicationLabel(pm.getApplicationInfo(a.pkg, 0)).toString() }.getOrNull()
+            ?: a.pkg.substringAfterLast('.').replaceFirstChar { it.uppercase() }
     }
 }

@@ -10,6 +10,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.material.icons.rounded.Android
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -112,5 +115,28 @@ fun Notice(text: String, error: Boolean = false, actionText: String? = null, onA
 fun Empty(text: String) {
     Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
         Text(text, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** أيقونة التطبيق: من النسخة المحفوظة، وإلا من الهاتف إن كان مثبتاً، وإلا أيقونة أندرويد. */
+@Composable
+fun AppIconView(pkg: String, iconB64: String = "", size: androidx.compose.ui.unit.Dp = 44.dp) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val bmp by androidx.compose.runtime.produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, pkg, iconB64) {
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                if (iconB64.isNotEmpty()) {
+                    val b = android.util.Base64.decode(iconB64, android.util.Base64.NO_WRAP)
+                    android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size).asImageBitmap()
+                } else null
+            }.getOrNull() ?: runCatching {
+                androidx.core.graphics.drawable.toBitmap(ctx.packageManager.getApplicationIcon(pkg), 96, 96).asImageBitmap()
+            }.getOrNull()
+        }
+    }
+    Box(Modifier.size(size), contentAlignment = Alignment.Center) {
+        val b = bmp
+        if (b != null) androidx.compose.foundation.Image(b, null, Modifier.fillMaxSize())
+        else Icon(androidx.compose.material.icons.Icons.Rounded.Android, null, modifier = Modifier.size(size * 0.7f))
     }
 }

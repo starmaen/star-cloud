@@ -301,6 +301,7 @@ class BackupEngine(
             val m = JSONObject().put("pkg", app.pkg).put("label", app.label).put("version", app.version)
                 .put("hasData", hasData).put("files", JSONArray(names)).put("size", app.apkBytes)
                 .put("time", System.currentTimeMillis())
+                .put("icon", Sources.iconBase64(context, app.pkg))
             meta.add(m)
             tracker.itemDone()
             runs.forEach { flush(it) }

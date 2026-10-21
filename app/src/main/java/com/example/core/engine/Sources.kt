@@ -17,6 +17,7 @@ import android.util.JsonWriter
 import com.example.core.QuotaInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.core.graphics.drawable.toBitmap
 import java.io.File
 import java.io.InputStream
 
@@ -61,6 +62,14 @@ object Sources {
         AppItem(pkg, pm.getApplicationLabel(ai).toString(), pm.getPackageInfo(pkg, 0).versionName ?: "",
             (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0, files, files.sumOf { it.length() })
     }.getOrNull()
+
+    /** أيقونة التطبيق مصغّرة (PNG 72px بصيغة Base64) لتُحفظ داخل النسخة وتظهر عند الاستعادة. */
+    fun iconBase64(context: Context, pkg: String): String = runCatching {
+        val bmp = context.packageManager.getApplicationIcon(pkg).toBitmap(72, 72)
+        val bos = java.io.ByteArrayOutputStream()
+        bmp.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, bos)
+        android.util.Base64.encodeToString(bos.toByteArray(), android.util.Base64.NO_WRAP)
+    }.getOrDefault("")
 
     fun isInstalled(context: Context, pkg: String): Boolean =
         runCatching { context.packageManager.getPackageInfo(pkg, 0); true }.getOrDefault(false)

@@ -13,7 +13,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.File
 
-data class AppMeta(val pkg: String, val label: String, val version: String, val hasData: Boolean, val size: Long, val files: List<String>)
+data class AppMeta(val pkg: String, val label: String, val version: String, val hasData: Boolean, val size: Long, val files: List<String>, val icon: String = "")
 
 /** عقدة داخل مجلد Files في النسخة: مسارها نسبي (مقاطع). */
 data class RemoteNode(val segs: List<String>, val isDir: Boolean)
@@ -44,9 +44,10 @@ class Catalog(private val dest: Destination, private val device: String) {
             val arr = JSONObject(ins.bufferedReader().readText()).optJSONArray("apps") ?: return emptyList()
             (0 until arr.length()).map {
                 val o = arr.getJSONObject(it)
-                AppMeta(o.getString("pkg"), o.optString("label", o.getString("pkg")), o.optString("version"),
+                AppMeta(o.getString("pkg"), o.optString("label").ifBlank { o.getString("pkg") }, o.optString("version"),
                     o.optBoolean("hasData"), o.optLong("size"),
-                    o.optJSONArray("files")?.let { a -> (0 until a.length()).map { i -> a.getString(i) } } ?: emptyList())
+                    o.optJSONArray("files")?.let { a -> (0 until a.length()).map { i -> a.getString(i) } } ?: emptyList(),
+                    o.optString("icon"))
             }.sortedBy { it.label.lowercase() }
         }
     }.getOrDefault(emptyList())
