@@ -20,7 +20,9 @@ class SafDestination(
     private val tree: Uri
 ) : Destination {
 
-    private class Node(val docId: String, val isDir: Boolean, val size: Long, val modified: Long)
+    private class Node(val docId: String, val isDir: Boolean, val size: Long, val modified: Long) {
+        val dups = ArrayList<String>()
+    }
 
     private val resolver get() = context.contentResolver
     private val rootDocId: String = DocumentsContract.getTreeDocumentId(tree)
@@ -29,30 +31,44 @@ class SafDestination(
 
     private fun docUri(docId: String): Uri = DocumentsContract.buildDocumentUriUsingTree(tree, docId)
 
-    private fun children(parentId: String): MutableMap<String, Node> = childCache.getOrPut(parentId) {
-        val map = LinkedHashMap<String, Node>()
+    private fun children(parentId: String): MutableMap<String, Node> =
+        childCache.getOrPut(parentId) { loadChildren(parentId) }
+
+    /** مزوّدو السحابة (Drive) يعيدون القائمة ناقصة أثناء التحميل؛ ننتظر حتى تكتمل كي لا ننشئ مجلدات مكررة. */
+    private fun loadChildren(parentId: String): MutableMap<String, Node> {
         val uri = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId)
-        resolver.query(
-            uri,
-            arrayOf(
-                DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-                DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-                DocumentsContract.Document.COLUMN_MIME_TYPE,
-                DocumentsContract.Document.COLUMN_SIZE,
-                DocumentsContract.Document.COLUMN_LAST_MODIFIED
-            ), null, null, null
-        )?.use { c ->
-            while (c.moveToNext()) {
-                val name = c.getString(1) ?: continue
-                map[name] = Node(
-                    c.getString(0),
-                    c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR,
-                    if (c.isNull(3)) 0 else c.getLong(3),
-                    if (c.isNull(4)) 0 else c.getLong(4)
-                )
+        var attempt = 0
+        while (true) {
+            val map = LinkedHashMap<String, Node>()
+            var loading = false
+            resolver.query(
+                uri,
+                arrayOf(
+                    DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                    DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                    DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    DocumentsContract.Document.COLUMN_SIZE,
+                    DocumentsContract.Document.COLUMN_LAST_MODIFIED
+                ), null, null, null
+            )?.use { c ->
+                loading = c.extras?.getBoolean(DocumentsContract.EXTRA_LOADING, false) == true
+                while (c.moveToNext()) {
+                    val name = c.getString(1) ?: continue
+                    val id = c.getString(0)
+                    val prev = map[name]
+                    if (prev != null) { prev.dups.add(id); continue }
+                    map[name] = Node(
+                        id,
+                        c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR,
+                        if (c.isNull(3)) 0 else c.getLong(3),
+                        if (c.isNull(4)) 0 else c.getLong(4)
+                    )
+                }
             }
+            if (!loading || attempt >= 40) return map
+            attempt++
+            Thread.sleep(750)
         }
-        map
     }
 
     private fun ensureDir(dir: List<String>, create: Boolean): String? {
@@ -62,8 +78,12 @@ class SafDestination(
             key.append('/').append(seg)
             val cached = dirIds[key.toString()]
             if (cached != null) { parent = cached; continue }
-            val kids = children(parent)
-            val existing = kids[seg]
+            var kids = children(parent)
+            var existing = kids[seg]
+            if (existing == null && create) {
+                // إعادة قراءة حديثة قبل الإنشاء لتفادي التكرار
+                kids = loadChildren(parent); childCache[parent] = kids; existing = kids[seg]
+            }
             val id = if (existing != null && existing.isDir) existing.docId else {
                 if (!create) return null
                 val created = DocumentsContract.createDocument(
@@ -95,14 +115,18 @@ class SafDestination(
         val parent = ensureDir(dir, true)!!
         val kids = children(parent)
         kids[name]?.let {
-            runCatching { DocumentsContract.deleteDocument(resolver, docUri(it.docId)) }
+            (listOf(it.docId) + it.dups).forEach { id ->
+                runCatching { DocumentsContract.deleteDocument(resolver, docUri(id)) }
+            }
             kids.remove(name)
         }
         val ext = name.substringAfterLast('.', "").lowercase()
         val mime = MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "application/octet-stream"
         val created = DocumentsContract.createDocument(resolver, docUri(parent), mime, name)
             ?: error("تعذّر إنشاء الملف «$name» في الوجهة")
-        resolver.openOutputStream(created, "w")?.use { out ->
+        val os = runCatching { resolver.openOutputStream(created, "w") }.getOrNull()
+            ?: runCatching { resolver.openOutputStream(created, "wt") }.getOrNull()
+        os?.use { out ->
             open().use { input ->
                 val buf = ByteArray(256 * 1024)
                 while (true) {
@@ -110,7 +134,7 @@ class SafDestination(
                     out.write(buf, 0, n); onBytes(n.toLong())
                 }
             }
-        } ?: error("تعذّر الكتابة في «$name»")
+        } ?: error("تعذّر الكتابة في «$name» (رفض المزوّد فتح الملف للكتابة)")
         kids[name] = Node(DocumentsContract.getDocumentId(created), false, length, modified)
         Unit
     }
