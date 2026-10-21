@@ -140,6 +140,7 @@ class BackupEngine(
 
             val errs = tracker.errorTotal
             summary = buildString {
+                if (appItems.isNotEmpty()) append("التطبيقات: ${appMeta.size}/${sel.apps.size} • ")
                 append("تم رفع ${tracker.doneItems - tracker.skippedCount} عنصراً")
                 append(" (${formatBytes(tracker.doneBytes)})")
                 if (tracker.skippedCount > 0) append(" • ${tracker.skippedCount} دون تغيير")
@@ -282,18 +283,33 @@ class BackupEngine(
             if (app.apkFiles.isEmpty()) tracker.error("${app.label}: تعذّر الوصول لملف التطبيق (APK)")
             var hasData = false
             val names = ArrayList<String>()
-            for (apk in app.apkFiles) {
-                names.add(apk.name)
+            for (apkOrig in app.apkFiles) {
+                names.add(apkOrig.name)
+                // بعض الأجهزة لا تسمح بقراءة APK تطبيقات أخرى مباشرة؛ نستعمل Root/Shizuku كبديل
+                var apk = apkOrig
+                if (!apkOrig.canRead()) {
+                    val pm = Privileged.detect()
+                    if (pm == PrivMode.NONE) {
+                        tracker.error("${app.label}: لا يمكن قراءة ملف التطبيق (${apkOrig.name}). يحتاج Root أو Shizuku."); continue
+                    }
+                    val t = File(tmp, "apk_${app.pkg}_${apkOrig.name}")
+                    try {
+                        Privileged.pullFile(pm, apkOrig.path, t); apk = t
+                        t.setLastModified(apkOrig.lastModified().takeIf { it > 0 } ?: 1000L)
+                    } catch (e: CancellationException) { throw e }
+                    catch (e: Exception) { tracker.error("${app.label}: ${e.message}"); continue }
+                }
                 for (r in runs) {
                     if (r.dead) continue
-                    val key = Layout.APPS + "/" + app.pkg + "/" + apk.name
+                    val key = Layout.APPS + "/" + app.pkg + "/" + apkOrig.name
                     val old = r.index[key]
-                    if (old != null && old.size == apk.length() && old.modified == apk.lastModified() && remoteHas(r, dir, apk.name, apk.length())) { tracker.bytes(apk.length()); continue }
-                    if (uploadFile(r, dir, apk.name, apk)) {
+                    if (old != null && old.size == apk.length() && old.modified == apk.lastModified() && remoteHas(r, dir, apkOrig.name, apk.length())) { tracker.bytes(apk.length()); continue }
+                    if (uploadFile(r, dir, apkOrig.name, apk)) {
                         val e = FileIndexEntity(r.dest.id, key, apk.length(), apk.lastModified())
                         r.index[key] = e; r.pending.add(e)
                     }
                 }
+                if (apk !== apkOrig) apk.delete()
             }
             if (choice.withData) {
                 if (!Privileged.canReadAppData(mode)) {

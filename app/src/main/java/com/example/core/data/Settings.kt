@@ -37,7 +37,7 @@ class Settings(context: Context) {
         set(v) { sp.edit().putInt("max_file_mb", v).apply() }
 
     var keepVersions: Int
-        get() = sp.getInt("keep_versions", 5)
+        get() = sp.getInt("keep_versions", 1)
         set(v) { sp.edit().putInt("keep_versions", v).apply() }
 
     var deviceName: String

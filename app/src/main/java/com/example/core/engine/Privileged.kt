@@ -73,6 +73,15 @@ object Privileged {
         PrivMode.NONE -> if (shizukuAlive) "Shizuku يعمل لكن لم تُمنح له الصلاحية بعد" else "غير متاح — نسخ التطبيقات (APK) فقط"
     }
 
+    /** نسخ ملف يتعذّر على التطبيق قراءته (مثل APK تطبيق آخر) بصلاحيات Root/Shizuku. */
+    suspend fun pullFile(mode: PrivMode, path: String, out: File) = withContext(Dispatchers.IO) {
+        require(!path.contains('\'') ) { "مسار غير صالح" }
+        val p = process(mode, "cat '$path'")
+        p.inputStream.use { i -> out.outputStream().use { o -> i.copyTo(o, 256 * 1024) } }
+        p.waitFor()
+        if (out.length() == 0L) error("تعذّر قراءة الملف بصلاحيات مرتفعة")
+    }
+
     /** نسخ بيانات تطبيق إلى ملف tar.gz. يعيد حجم الملف. */
     suspend fun backupAppData(mode: PrivMode, pkg: String, out: File): Long = withContext(Dispatchers.IO) {
         require(pkg.matches(Regex("[A-Za-z0-9_.]+"))) { "اسم حزمة غير صالح" }

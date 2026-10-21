@@ -41,7 +41,7 @@ object Sources {
                 val files = buildList {
                     add(File(ai.sourceDir))
                     ai.splitSourceDirs?.forEach { add(File(it)) }
-                }.filter { it.exists() }
+                }
                 val ver = runCatching { pm.getPackageInfo(ai.packageName, 0).versionName }.getOrNull() ?: ""
                 AppItem(
                     ai.packageName,
@@ -58,7 +58,7 @@ object Sources {
     fun appItem(context: Context, pkg: String): AppItem? = runCatching {
         val pm = context.packageManager
         val ai = pm.getApplicationInfo(pkg, 0)
-        val files = buildList { add(File(ai.sourceDir)); ai.splitSourceDirs?.forEach { add(File(it)) } }.filter { it.exists() }
+        val files = buildList { add(File(ai.sourceDir)); ai.splitSourceDirs?.forEach { add(File(it)) } }
         AppItem(pkg, pm.getApplicationLabel(ai).toString(), pm.getPackageInfo(pkg, 0).versionName ?: "",
             (ai.flags and ApplicationInfo.FLAG_SYSTEM) != 0, files, files.sumOf { it.length() })
     }.getOrNull()
