@@ -23,7 +23,9 @@ fun timeText(t: Long): String = SimpleDateFormat("EEEE d MMMM • HH:mm", Locale
 @Composable
 fun HomeScreen(vm: AppViewModel, act: Actions, goBackupTab: () -> Unit, goDestinations: () -> Unit, goRestoreTab: () -> Unit) {
     val run by vm.run.collectAsState()
+    var showGuide by remember { mutableStateOf(false) }
     LaunchedEffect(vm.tick) { vm.refreshInfo() }
+    if (showGuide) GuideDialog { showGuide = false }
     ScreenScaffold("Star Cloud", null) { pad ->
         LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Spacer(Modifier.height(4.dp)) }
@@ -34,6 +36,8 @@ fun HomeScreen(vm: AppViewModel, act: Actions, goBackupTab: () -> Unit, goDestin
             if (vm.destinations.none { it.enabled }) item {
                 Notice("لم تحدد مكان حفظ النسخ بعد. أضف وجهة (Google Drive أو بطاقة أو خادم).", actionText = "إضافة وجهة", onAction = goDestinations)
             }
+
+            item { GuideBanner { showGuide = true } }
 
             item {
                 if (run.running) RunCard(vm, run.isRestore) else {
