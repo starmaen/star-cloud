@@ -80,7 +80,15 @@ fun HomeScreen(vm: AppViewModel, act: Actions, goBackupTab: () -> Unit, goDestin
             item {
                 Card1 {
                     Text("التخزين", fontWeight = FontWeight.Bold)
-                    StorageBar("ذاكرة الهاتف", vm.deviceStorage)
+                    val vols = vm.deviceVolumes
+                    if (vols.isEmpty()) {
+                        StorageBar("ذاكرة الهاتف", vm.deviceStorage)
+                    } else {
+                        vols.forEachIndexed { i, v ->
+                            if (i > 0) HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                            StorageBar(v.label, v.quota)
+                        }
+                    }
                     vm.destinations.filter { it.enabled }.forEach { d ->
                         val info = vm.destInfo[d.id]
                         HorizontalDivider(Modifier.padding(vertical = 6.dp))

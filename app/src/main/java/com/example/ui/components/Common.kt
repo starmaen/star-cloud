@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.core.QuotaInfo
 import com.example.core.formatBytes
@@ -74,13 +75,13 @@ fun ScreenScaffold(title: String, onBack: (() -> Unit)?, actions: @Composable Ro
 @Composable
 fun StorageBar(label: String, q: QuotaInfo?, extra: String? = null) {
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text(label, fontWeight = FontWeight.Medium)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            Text(label, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Spacer(Modifier.width(8.dp))
             Text(
                 if (q?.total != null && q.used != null) "${formatBytes(q.used)} من ${formatBytes(q.total)}"
                 else if (q?.free != null) "متاح ${formatBytes(q.free)}" else "المساحة غير معروفة",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (q?.total != null && q.used != null && q.total > 0) {
             Spacer(Modifier.height(6.dp))

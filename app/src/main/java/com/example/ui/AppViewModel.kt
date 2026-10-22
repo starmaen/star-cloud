@@ -43,6 +43,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
     var destinations by mutableStateOf(settings.destinations); private set
     var prefs by mutableStateOf(readPrefs()); private set
     var deviceStorage by mutableStateOf<QuotaInfo?>(null); private set
+    var deviceVolumes by mutableStateOf<List<DeviceStorage.Volume>>(emptyList()); private set
     var destInfo by mutableStateOf<Map<String, DestInfo>>(emptyMap()); private set
     var lastBackup by mutableStateOf<RunLogEntity?>(null); private set
     var logs by mutableStateOf<List<RunLogEntity>>(emptyList()); private set
@@ -98,7 +99,9 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshInfo() {
         viewModelScope.launch {
-            deviceStorage = withContext(Dispatchers.IO) { runCatching { DeviceStorage.read(app) }.getOrNull() }
+            deviceVolumes = withContext(Dispatchers.IO) { runCatching { DeviceStorage.volumes(app) }.getOrDefault(emptyList()) }
+            deviceStorage = deviceVolumes.firstOrNull()?.quota
+                ?: withContext(Dispatchers.IO) { runCatching { DeviceStorage.read(app) }.getOrNull() }
             lastBackup = withContext(Dispatchers.IO) { app.db.dao().lastGoodBackup() }
             logs = withContext(Dispatchers.IO) { app.db.dao().recentLogs() }
             priv = Privileged.detect(force = true)

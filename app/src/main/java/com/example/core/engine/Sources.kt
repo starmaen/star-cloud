@@ -245,17 +245,41 @@ object Sources {
 
 /** أرقام التخزين الفعلية للجهاز (لا تقديرات). */
 object DeviceStorage {
-    fun read(context: Context): QuotaInfo {
-        val dir = Environment.getExternalStorageDirectory()
-        val st = StatFs(dir.path)
-        val free = st.availableBytes
-        var total = st.totalBytes
-        if (Build.VERSION.SDK_INT >= 26) {
-            runCatching {
-                val ssm = context.getSystemService(android.app.usage.StorageStatsManager::class.java)
-                total = ssm.getTotalBytes(SM.UUID_DEFAULT)
+    data class Volume(val label: String, val quota: QuotaInfo)
+
+    /** الصفحة الرئيسية: كل وحدات التخزين المثبّتة (الداخلية + بطاقة SD) بأرقام StatFs الحقيقية. */
+    fun volumes(context: Context): List<Volume> {
+        val out = ArrayList<Volume>()
+        val seen = HashSet<String>()
+        runCatching {
+            val sm = context.getSystemService(SM::class.java)
+            sm.storageVolumes.forEach { v ->
+                if (v.state != Environment.MEDIA_MOUNTED) return@forEach
+                val dir = v.directory ?: return@forEach
+                val path = dir.absolutePath
+                if (!seen.add(path)) return@forEach
+                val st = runCatching { StatFs(path) }.getOrNull() ?: return@forEach
+                val total = st.totalBytes
+                if (total <= 0) return@forEach
+                val free = st.availableBytes
+                val label = when {
+                    v.isPrimary -> "ذاكرة الهاتف"
+                    v.isRemovable -> "بطاقة SD"
+                    else -> runCatching { v.getDescription(context) }.getOrNull() ?: "تخزين"
+                }
+                out.add(Volume(label, QuotaInfo(total, (total - free).coerceAtLeast(0), free)))
             }
         }
-        return QuotaInfo(total, (total - free).coerceAtLeast(0), free)
+        if (out.isEmpty()) {
+            val dir = Environment.getExternalStorageDirectory()
+            runCatching {
+                val st = StatFs(dir.path)
+                out.add(Volume("ذاكرة الهاتف", QuotaInfo(st.totalBytes, (st.totalBytes - st.availableBytes).coerceAtLeast(0), st.availableBytes)))
+            }
+        }
+        return out.sortedBy { if (it.label == "ذاكرة الهاتف") 0 else 1 }
     }
+
+    fun read(context: Context): QuotaInfo =
+        volumes(context).firstOrNull()?.quota ?: QuotaInfo(null, null, null)
 }
