@@ -66,22 +66,19 @@ private fun AddDestinationDialog(vm: AppViewModel, act: Actions, close: () -> Un
     var page by remember { mutableStateOf(0) } // 0 قائمة، 1 WebDAV، 2 Drive مباشر
     AlertDialog(
         onDismissRequest = close,
-        title = { Text(when (page) { 1 -> "خادم WebDAV / Nextcloud"; 2 -> "Google Drive مباشر"; else -> "أين تريد حفظ النسخ؟" }) },
+        title = { Text(when (page) { 1 -> "خادم WebDAV / Nextcloud"; else -> "أين تريد حفظ النسخ؟" }) },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 when (page) {
                     0 -> {
-                        IconRow(Icons.Rounded.Cloud, "Google Drive وتطبيقات السحابة", "الأسهل: Drive أو OneDrive أو Dropbox أو Mega",
-                            onClick = { act.pickFolder(); close() })
+                        IconRow(Icons.Rounded.CloudQueue, "Google Drive", "سجّل الدخول بحسابك — الأسهل والأسرع",
+                            onClick = { act.signInGoogle(); close() })
                         IconRow(Icons.Rounded.Folder, "مجلد في الهاتف أو بطاقة SD", "نسخ محلي سريع", onClick = { act.pickFolder(); close() })
+                        IconRow(Icons.Rounded.Cloud, "تطبيق سحابي آخر", "OneDrive أو Dropbox أو Mega … (يجب تثبيت تطبيقه)",
+                            onClick = { act.pickFolder(); close() })
                         IconRow(Icons.Rounded.Dns, "خادم WebDAV / Nextcloud", "خادمك الخاص أو NAS", onClick = { page = 1 })
-                        IconRow(Icons.Rounded.CloudQueue, "Google Drive مباشر (متقدم)", "يحتاج إعداداً في Google Cloud", onClick = { page = 2 })
-                        Spacer(Modifier.height(6.dp))
-                        Text("عند فتح المنتقي اختر الخدمة من القائمة الجانبية (☰) ثم افتح أو أنشئ مجلداً وأكّد بزر «استخدام هذا المجلد». لا حاجة لتسجيل دخول داخل التطبيق.",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     1 -> WebDavForm(vm, close)
-                    2 -> DriveDirect(vm, act, close)
                 }
             }
         },
@@ -124,23 +121,3 @@ private fun WebDavForm(vm: AppViewModel, close: () -> Unit) {
     }
 }
 
-@Composable
-private fun DriveDirect(vm: AppViewModel, act: Actions, close: () -> Unit) {
-    val email = remember(vm.tick) { vm.google.email() }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("هذه الطريقة تتصل بـ Google Drive مباشرة، وتحتاج مرة واحدة تسجيل التطبيق في Google Cloud Console:", style = MaterialTheme.typography.bodySmall)
-        Text("1) أنشئ مشروعاً وفعّل «Google Drive API».\n2) أعدّ شاشة الموافقة (OAuth consent) وأضف بريدك مستخدماً تجريبياً.\n3) أنشئ «OAuth client ID» من نوع Android بهذه البيانات:",
-            style = MaterialTheme.typography.bodySmall)
-        Text("الحزمة: com.aistudio.starcloud.kxpqr", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-        Text("SHA-1: ${vm.google.signingSha1() ?: "غير متاح"}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-        Text("بدون هذا تظهر رسالة الخطأ 10 (DEVELOPER_ERROR). إن أردت تجنّب كل هذا استخدم «Google Drive وتطبيقات السحابة» من القائمة السابقة.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (email != null) {
-            Text("الحساب الحالي: $email")
-            Button(onClick = {
-                vm.addDestination(DestConfig(Settings.newId(), DestKind.DRIVE_API, "Drive — $email")); close()
-            }) { Text("استخدام هذا الحساب") }
-        }
-        Button(onClick = act.signInGoogle) { Text(if (email == null) "تسجيل الدخول بحساب Google" else "تغيير الحساب") }
-    }
-}

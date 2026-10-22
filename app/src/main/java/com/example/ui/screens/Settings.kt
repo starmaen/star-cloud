@@ -105,9 +105,6 @@ fun SettingsTab(vm: AppViewModel, act: Actions) {
         }
     }
 
-    vm.message?.let { m ->
-        AlertDialog(onDismissRequest = { vm.message = null }, text = { Text(m) }, confirmButton = { TextButton(onClick = { vm.message = null }) { Text("حسناً") } })
-    }
     if (nameDialog) {
         var t by remember { mutableStateOf(p.deviceName) }
         AlertDialog(onDismissRequest = { nameDialog = false }, title = { Text("اسم الهاتف") },

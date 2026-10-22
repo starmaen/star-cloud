@@ -46,11 +46,18 @@ class MainActivity : ComponentActivity() {
 
     private val pickTree = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri -> uri?.let(::onTreePicked) }
     private val googleSignIn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
-        val err = runCatching { GoogleSignIn.getSignedInAccountFromIntent(r.data).getResult(ApiException::class.java) }.exceptionOrNull()
-        if (err is ApiException) vm.message = when (err.statusCode) {
-            10 -> "خطأ 10 (DEVELOPER_ERROR): لم يُسجَّل التطبيق في Google Cloud ببصمة SHA-1 الحالية. اتبع الخطوات في شاشة «Google Drive مباشر»، أو استخدم «Google Drive وتطبيقات السحابة» بدون أي إعداد."
+        val res = runCatching { GoogleSignIn.getSignedInAccountFromIntent(r.data).getResult(ApiException::class.java) }
+        val acc = res.getOrNull()
+        val err = res.exceptionOrNull()
+        if (acc != null) {
+            val email = acc.email ?: "Google"
+            if (vm.destinations.none { it.kind == DestKind.DRIVE_API && it.label.endsWith(email) })
+                vm.addDestination(DestConfig(Settings.newId(), DestKind.DRIVE_API, "Google Drive — $email"))
+            vm.message = "تم ربط حسابك ($email) ✓ يمكنك الآن بدء النسخ."
+        } else if (err is ApiException) vm.message = when (err.statusCode) {
+            10 -> "خطأ 10: هذه النسخة من التطبيق غير مسجّلة لدى Google Drive بعد.\nللمطوّر: سجّل عميل OAuth (Android) بالحزمة ${packageName} والبصمة SHA-1: ${vm.google.signingSha1()}\nفي الأثناء استخدم «تطبيق سحابي آخر» أو «مجلد»."
             12501 -> "أُلغي تسجيل الدخول."
-            12500 -> "فشل تسجيل الدخول. تأكد من إعداد شاشة الموافقة وإضافة بريدك مستخدماً تجريبياً."
+            12500 -> "فشل تسجيل الدخول. تحقق من اتصالك وحدّث خدمات Google Play."
             7 -> "لا يوجد اتصال بالإنترنت."
             else -> "تعذّر تسجيل الدخول (رمز ${err.statusCode})."
         }
@@ -130,6 +137,10 @@ private fun StarRoot(vm: AppViewModel, act: Actions) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     BackHandler(overlay != null) { overlay = null }
+    vm.message?.let { m ->
+        AlertDialog(onDismissRequest = { vm.message = null }, text = { Text(m) },
+            confirmButton = { TextButton(onClick = { vm.message = null }) { Text("حسناً") } })
+    }
 
     when (overlay) {
         Overlay.APPS -> AppsPicker(vm) { overlay = null }
