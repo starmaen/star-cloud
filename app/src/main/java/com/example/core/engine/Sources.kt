@@ -20,6 +20,7 @@ import kotlinx.coroutines.withContext
 import androidx.core.graphics.drawable.toBitmap
 import java.io.File
 import java.io.InputStream
+import java.util.UUID
 
 data class AppItem(
     val pkg: String,
@@ -247,36 +248,61 @@ object Sources {
 object DeviceStorage {
     data class Volume(val label: String, val quota: QuotaInfo)
 
-    /** الصفحة الرئيسية: كل وحدات التخزين المثبّتة (الداخلية + بطاقة SD) بأرقام StatFs الحقيقية. */
+    /** الصفحة الرئيسية: كل وحدات التخزين المثبتة (الداخلية + بطاقة SD) بأرقام StatFs الحقيقية. */
     fun volumes(context: Context): List<Volume> {
         val out = ArrayList<Volume>()
         val seen = HashSet<String>()
+
+        fun add(label: String, total: Long, free: Long) {
+            if (total <= 0L) return
+            if (!seen.add(label)) return
+            out.add(Volume(label, QuotaInfo(total, (total - free).coerceAtLeast(0L), free)))
+        }
+
+        // 1) مجلدات التطبيق على كل وحدة تخزين: تعمل بلا أي صلاحية حتى مع scoped storage.
+        runCatching {
+            context.getExternalFilesDirs(null).filterNotNull().forEachIndexed { idx, dir ->
+                val existing = generateSequence<File>(dir) { it.parentFile }.firstOrNull { it.exists() }
+                val st = runCatching { StatFs((existing ?: dir).absolutePath) }.getOrNull()
+                    ?: return@forEachIndexed
+                val removable = runCatching { Environment.isExternalStorageRemovable(dir) }.getOrDefault(false)
+                val label = when {
+                    idx == 0 -> "ذاكرة الهاتف"
+                    removable -> "بطاقة SD"
+                    else -> "ذاكرة إضافية"
+                }
+                add(label, st.totalBytes, st.availableBytes)
+            }
+        }
+
+        // 2) احتياطي: أي وحدة مذكورة في StorageManager ولم تُقرأ بعد (الإجمالي/المتاح عبر StorageStatsManager).
         runCatching {
             val sm = context.getSystemService(SM::class.java)
+            val ssm = if (Build.VERSION.SDK_INT >= 26)
+                context.getSystemService(android.app.usage.StorageStatsManager::class.java) else null
             sm.storageVolumes.forEach { v ->
                 if (v.state != Environment.MEDIA_MOUNTED) return@forEach
-                val dir = v.directory ?: return@forEach
-                val path = dir.absolutePath
-                if (!seen.add(path)) return@forEach
-                val st = runCatching { StatFs(path) }.getOrNull() ?: return@forEach
-                val total = st.totalBytes
-                if (total <= 0) return@forEach
-                val free = st.availableBytes
                 val label = when {
                     v.isPrimary -> "ذاكرة الهاتف"
                     v.isRemovable -> "بطاقة SD"
-                    else -> runCatching { v.getDescription(context) }.getOrNull() ?: "تخزين"
+                    else -> "ذاكرة إضافية"
                 }
-                out.add(Volume(label, QuotaInfo(total, (total - free).coerceAtLeast(0), free)))
+                if (label in seen) return@forEach
+                var total = 0L; var free = 0L
+                val dir = if (Build.VERSION.SDK_INT >= 30) v.directory else null
+                if (dir != null) runCatching {
+                    val st = StatFs(dir.absolutePath)
+                    total = st.totalBytes; free = st.availableBytes
+                }
+                if (total <= 0L && ssm != null) runCatching {
+                    val u = UUID.fromString(v.uuid!!)
+                    total = ssm.getTotalBytes(u)
+                    free = ssm.getFreeBytes(u)
+                }
+                add(label, total, free)
             }
         }
-        if (out.isEmpty()) {
-            val dir = Environment.getExternalStorageDirectory()
-            runCatching {
-                val st = StatFs(dir.path)
-                out.add(Volume("ذاكرة الهاتف", QuotaInfo(st.totalBytes, (st.totalBytes - st.availableBytes).coerceAtLeast(0), st.availableBytes)))
-            }
-        }
+
         return out.sortedBy { if (it.label == "ذاكرة الهاتف") 0 else 1 }
     }
 
